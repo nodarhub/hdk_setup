@@ -1,0 +1,40 @@
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    ethLAN2:
+      mtu: 9000
+      dhcp4: no
+      dhcp6: no
+      accept-ra: no
+      addresses:
+        - 10.10.2.1/24
+      optional: true
+
+    ethLAN3:
+      mtu: 9000
+      dhcp4: no
+      dhcp6: no
+      accept-ra: no
+      addresses:
+        - 10.10.3.1/24
+      optional: true
+
+    ethLAN4:
+      mtu: 9000
+      dhcp4: no
+      dhcp6: no
+      accept-ra: no
+      addresses:
+        - 10.10.4.1/24
+      optional: true
+
+    ethLAN5:
+      mtu: 9000
+      dhcp4: no
+      dhcp6: no
+      accept-ra: no
+      addresses:
+        - 10.10.5.1/24
+      optional: true
+

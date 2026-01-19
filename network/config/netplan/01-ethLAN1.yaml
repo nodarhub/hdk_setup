@@ -1,0 +1,16 @@
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    ethLAN1:
+      addresses:
+        - 10.10.1.10/24
+      routes:
+        - to: default
+          via: 10.10.1.1
+          metric: 500
+      dhcp6: no
+      accept-ra: no
+      link-local: []      # Disable automatic link‑local assignment
+      optional: true
+

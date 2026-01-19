@@ -1,0 +1,11 @@
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    ethLAN0:
+      dhcp4: yes
+      dhcp6: no
+      accept-ra: no
+      link-local: []      # Disable automatic link‑local assignment
+      optional: true
+
