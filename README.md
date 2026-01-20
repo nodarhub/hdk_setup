@@ -106,7 +106,7 @@ Installs and configures Linux PTP (ptp4l) for precision time synchronization:
 
 - Operates as PTP master clock
 - Uses E2E (End-to-End) delay mechanism
-- Creates `linuxptp.service` for automatic startup
+- Creates `linuxptp.service` for automatic startup and restart on failure
 
 ### Clock (Both platforms)
 
