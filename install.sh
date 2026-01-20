@@ -61,10 +61,6 @@ log "HDK Setup Script"
 log "Device type: $DEVICE_TYPE"
 log "=========================================="
 
-# Create required directory structure
-log "Creating required directories..."
-mkdir -p /home/nodar/hammerhead/{config,images,logs}
-
 # Step 1: MTU Setup (Jetson only - OnLogic MTU is set via netplan in network setup)
 if [ "$DEVICE_TYPE" == "jetson" ]; then
   log "[1/4] Setting up MTU for eth0..."
