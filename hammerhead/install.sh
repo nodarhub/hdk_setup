@@ -35,7 +35,7 @@ Wants=network.target
 [Service]
 Type=simple
 User=$RUN_USER
-ExecStart=$HAMMERHEAD_BIN
+ExecStart=/usr/bin/stdbuf -oL $HAMMERHEAD_BIN
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
