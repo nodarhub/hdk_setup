@@ -61,28 +61,32 @@ log "HDK Uninstall Script"
 log "Device type: $DEVICE_TYPE"
 log "=========================================="
 
-# Step 1: Clock uninstall
-log "[1/4] Uninstalling clock service..."
+# Step 1: Hammerhead autostart uninstall
+log "[1/5] Uninstalling Hammerhead autostart service..."
+"$SCRIPT_DIR/hammerhead/uninstall.sh" || log "Hammerhead uninstall completed with warnings"
+
+# Step 2: Clock uninstall
+log "[2/5] Uninstalling clock service..."
 "$SCRIPT_DIR/clock/uninstall.sh" || log "Clock uninstall completed with warnings"
 
-# Step 2: PTP uninstall
-log "[2/4] Uninstalling PTP..."
+# Step 3: PTP uninstall
+log "[3/5] Uninstalling PTP..."
 "$SCRIPT_DIR/ptp/uninstall.sh" || log "PTP uninstall completed with warnings"
 
-# Step 3: Network uninstall (OnLogic only)
+# Step 4: Network uninstall (OnLogic only)
 if [ "$DEVICE_TYPE" == "onlogic" ]; then
-  log "[3/4] Uninstalling network..."
+  log "[4/5] Uninstalling network..."
   "$SCRIPT_DIR/network/uninstall.sh" || log "Network uninstall completed with warnings"
 else
-  log "[3/4] Skipping network uninstall (Jetson)"
+  log "[4/5] Skipping network uninstall (Jetson)"
 fi
 
-# Step 4: MTU uninstall (Jetson only - OnLogic MTU is handled via netplan in network uninstall)
+# Step 5: MTU uninstall (Jetson only - OnLogic MTU is handled via netplan in network uninstall)
 if [ "$DEVICE_TYPE" == "jetson" ]; then
-  log "[4/4] Uninstalling MTU for eth0..."
+  log "[5/5] Uninstalling MTU for eth0..."
   "$SCRIPT_DIR/mtu/uninstall.sh" eth0 || log "MTU uninstall completed with warnings"
 else
-  log "[4/4] Skipping MTU uninstall (OnLogic - handled via netplan)"
+  log "[5/5] Skipping MTU uninstall (OnLogic - handled via netplan)"
 fi
 
 log "=========================================="
