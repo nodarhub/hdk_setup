@@ -35,9 +35,12 @@ Wants=network.target isc-dhcp-server.service linuxptp.service
 [Service]
 Type=simple
 User=$RUN_USER
-ExecStart=$HAMMERHEAD_BIN
+ExecStart=/usr/bin/stdbuf -oL -eL $HAMMERHEAD_BIN
 Restart=on-failure
 RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hammerhead
 
 [Install]
 WantedBy=multi-user.target
