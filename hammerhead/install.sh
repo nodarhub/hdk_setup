@@ -24,6 +24,13 @@ if [ ! -x "$HAMMERHEAD_BIN" ]; then
     exit 1
 fi
 
+# Ensure expect (unbuffer) is installed for proper log output
+if ! command -v unbuffer >/dev/null 2>&1; then
+    log "Installing expect package for unbuffer..."
+    sudo apt update
+    sudo apt install -y expect
+fi
+
 # Create systemd service file
 log "Creating systemd service file at $SERVICE_FILE..."
 sudo tee "$SERVICE_FILE" > /dev/null << EOF
@@ -35,7 +42,7 @@ Wants=network.target
 [Service]
 Type=simple
 User=$RUN_USER
-ExecStart=/usr/bin/script -qfc "$HAMMERHEAD_BIN" /dev/stdout
+ExecStart=/usr/bin/unbuffer -p $HAMMERHEAD_BIN
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
