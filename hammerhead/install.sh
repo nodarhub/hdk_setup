@@ -35,6 +35,8 @@ Type=simple
 ExecStart=$HAMMERHEAD_BIN
 Restart=on-failure
 RestartSec=5
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
