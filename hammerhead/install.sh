@@ -35,7 +35,7 @@ Wants=network.target
 [Service]
 Type=simple
 User=$RUN_USER
-ExecStart=/usr/bin/stdbuf -oL $HAMMERHEAD_BIN
+ExecStart=/usr/bin/script -qfc "$HAMMERHEAD_BIN" /dev/null
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
