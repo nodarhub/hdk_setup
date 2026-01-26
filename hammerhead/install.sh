@@ -29,8 +29,8 @@ log "Creating systemd service file at $SERVICE_FILE..."
 sudo tee "$SERVICE_FILE" > /dev/null << EOF
 [Unit]
 Description=Hammerhead Service
-After=network.target
-Wants=network.target
+After=network.target isc-dhcp-server.service linuxptp.service
+Wants=network.target isc-dhcp-server.service linuxptp.service
 
 [Service]
 Type=simple
