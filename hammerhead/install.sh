@@ -14,6 +14,7 @@ log "Starting Hammerhead service installation..."
 # Variables
 HAMMERHEAD_BIN="/usr/bin/hammerhead"
 SERVICE_FILE="/etc/systemd/system/hammerhead.service"
+JOURNALD_CONF="/etc/systemd/journald.conf"
 # Get the actual user (handle sudo case)
 RUN_USER="${SUDO_USER:-$USER}"
 
@@ -22,6 +23,15 @@ if [ ! -x "$HAMMERHEAD_BIN" ]; then
     echo "Error: Hammerhead executable not found at $HAMMERHEAD_BIN"
     echo "Please install hammerhead before running this script."
     exit 1
+fi
+
+# Update journald.conf to allow debug level logging
+if grep -q "MaxLevelStore=notice" "$JOURNALD_CONF" 2>/dev/null; then
+    log "Updating journald.conf to enable debug level logging..."
+    sudo sed -i 's/MaxLevelStore=notice/MaxLevelStore=debug/' "$JOURNALD_CONF"
+    sudo sed -i 's/MaxLevelSyslog=notice/MaxLevelSyslog=debug/' "$JOURNALD_CONF"
+    sudo systemctl restart systemd-journald
+    log "journald configuration updated and restarted."
 fi
 
 # Create systemd service file
