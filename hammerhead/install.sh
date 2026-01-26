@@ -31,6 +31,15 @@ if ! command -v unbuffer >/dev/null 2>&1; then
     sudo apt install -y expect
 fi
 
+# Create wrapper script to handle unbuffered output
+WRAPPER_SCRIPT="/usr/local/bin/hammerhead-wrapper"
+log "Creating wrapper script at $WRAPPER_SCRIPT..."
+sudo tee "$WRAPPER_SCRIPT" > /dev/null << 'WRAPPER'
+#!/bin/bash
+exec /usr/bin/unbuffer /usr/bin/hammerhead 2>&1
+WRAPPER
+sudo chmod +x "$WRAPPER_SCRIPT"
+
 # Create systemd service file
 log "Creating systemd service file at $SERVICE_FILE..."
 sudo tee "$SERVICE_FILE" > /dev/null << EOF
@@ -42,7 +51,7 @@ Wants=network.target
 [Service]
 Type=simple
 User=$RUN_USER
-ExecStart=/usr/bin/unbuffer $HAMMERHEAD_BIN
+ExecStart=$WRAPPER_SCRIPT
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
