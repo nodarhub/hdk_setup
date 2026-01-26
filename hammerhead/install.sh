@@ -24,22 +24,6 @@ if [ ! -x "$HAMMERHEAD_BIN" ]; then
     exit 1
 fi
 
-# Ensure expect (unbuffer) is installed for proper log output
-if ! command -v unbuffer >/dev/null 2>&1; then
-    log "Installing expect package for unbuffer..."
-    sudo apt update
-    sudo apt install -y expect
-fi
-
-# Create wrapper script to handle unbuffered output
-WRAPPER_SCRIPT="/usr/local/bin/hammerhead-wrapper"
-log "Creating wrapper script at $WRAPPER_SCRIPT..."
-sudo tee "$WRAPPER_SCRIPT" > /dev/null << 'WRAPPER'
-#!/bin/bash
-exec /usr/bin/unbuffer /usr/bin/hammerhead 2>&1
-WRAPPER
-sudo chmod +x "$WRAPPER_SCRIPT"
-
 # Create systemd service file
 log "Creating systemd service file at $SERVICE_FILE..."
 sudo tee "$SERVICE_FILE" > /dev/null << EOF
@@ -51,11 +35,9 @@ Wants=network.target
 [Service]
 Type=simple
 User=$RUN_USER
-ExecStart=$WRAPPER_SCRIPT
+ExecStart=$HAMMERHEAD_BIN
 Restart=on-failure
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
