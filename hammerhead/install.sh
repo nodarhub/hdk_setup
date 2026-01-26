@@ -42,7 +42,7 @@ Wants=network.target
 [Service]
 Type=simple
 User=$RUN_USER
-ExecStart=/usr/bin/unbuffer -p $HAMMERHEAD_BIN
+ExecStart=/usr/bin/unbuffer $HAMMERHEAD_BIN
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
