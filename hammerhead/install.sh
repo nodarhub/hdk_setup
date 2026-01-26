@@ -14,6 +14,8 @@ log "Starting Hammerhead service installation..."
 # Variables
 HAMMERHEAD_BIN="/usr/bin/hammerhead"
 SERVICE_FILE="/etc/systemd/system/hammerhead.service"
+# Get the actual user (handle sudo case)
+RUN_USER="${SUDO_USER:-$USER}"
 
 # Check that hammerhead binary exists
 if [ ! -x "$HAMMERHEAD_BIN" ]; then
@@ -32,6 +34,7 @@ Wants=network.target
 
 [Service]
 Type=simple
+User=$RUN_USER
 ExecStart=$HAMMERHEAD_BIN
 Restart=on-failure
 RestartSec=5
