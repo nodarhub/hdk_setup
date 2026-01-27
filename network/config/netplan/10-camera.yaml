@@ -21,12 +21,11 @@ network:
       optional: true
 
     ethLAN4:
-      mtu: 9000
-      dhcp4: no
+      addresses:
+        - 192.168.30.25/24
       dhcp6: no
       accept-ra: no
-      addresses:
-        - 10.10.4.1/24
+      link-local: []      # Disable automatic link‑local assignment
       optional: true
 
     ethLAN5:
