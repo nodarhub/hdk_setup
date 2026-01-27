@@ -73,38 +73,56 @@ log "=========================================="
 
 # Step 1: MTU Setup (Jetson only - OnLogic MTU is set via netplan in network setup)
 if [ "$DEVICE_TYPE" == "jetson" ]; then
-  log "[1/5] Setting up MTU for eth0..."
+  log "[1/7] Setting up MTU for eth0..."
   "$SCRIPT_DIR/mtu/install.sh" eth0
 else
-  log "[1/5] Skipping MTU setup (OnLogic - handled via netplan)"
+  log "[1/7] Skipping MTU setup (OnLogic - handled via netplan)"
 fi
 
 # Step 2: Network Setup (OnLogic only)
 if [ "$DEVICE_TYPE" == "onlogic" ]; then
-  log "[2/5] Setting up network for $CAMERA_INTERFACE_1 and $CAMERA_INTERFACE_2..."
+  log "[2/7] Setting up network for $CAMERA_INTERFACE_1 and $CAMERA_INTERFACE_2..."
   "$SCRIPT_DIR/network/install.sh" "$CAMERA_INTERFACE_1" "$CAMERA_INTERFACE_2"
 else
-  log "[2/5] Skipping network setup (Jetson)"
+  log "[2/7] Skipping network setup (Jetson)"
 fi
 
-# Step 3: PTP Setup
-log "[3/5] Setting up PTP..."
+# Step 3: PTP slave Setup (OnLogic only)
+log "[3/7] Setting up PTP slave..."
+if [ "$DEVICE_TYPE" == "onlogic" ]; then
+  log "[3/7] Setting up PTP slave for ethLAN4..."
+  "$SCRIPT_DIR/ptp_slave/install.sh" -i ethLAN4
+else
+  log "[3/7] Skipping PTP slave setup (Jetson)"
+fi
+
+# Step 4: phc2sys Setup (OnLogic only)
+log "[4/7] Setting up phc2sys..."
+if [ "$DEVICE_TYPE" == "onlogic" ]; then
+  log "[4/7] Setting up phc2sys for ethLAN4..."
+  "$SCRIPT_DIR/phc2sys/install.sh" -i ethLAN4
+else
+  log "[4/7] Skipping phc2sys setup (Jetson)"
+fi
+
+# Step 5: PTP Setup
+log "[5/7] Setting up PTP..."
 if [ "$DEVICE_TYPE" == "jetson" ]; then
   "$SCRIPT_DIR/ptp/install.sh" -i eth0
 elif [ "$DEVICE_TYPE" == "onlogic" ]; then
   "$SCRIPT_DIR/ptp/install.sh" -i "$CAMERA_INTERFACE_1" -i "$CAMERA_INTERFACE_2"
 fi
 
-# Step 4: Clock Setup
-log "[4/5] Setting up clock service..."
+# Step 6: Clock Setup
+log "[6/7] Setting up clock service..."
 "$SCRIPT_DIR/clock/install.sh"
 
-# Step 5: Hammerhead Autostart (optional)
+# Step 7: Hammerhead Autostart (optional)
 if [ "$INSTALL_AUTOSTART" == "true" ]; then
-  log "[5/5] Setting up Hammerhead autostart service..."
+  log "[7/7] Setting up Hammerhead autostart service..."
   "$SCRIPT_DIR/hammerhead/install.sh"
 else
-  log "[5/5] Skipping Hammerhead autostart (disabled by default, use -autostart true to enable)"
+  log "[7/7] Skipping Hammerhead autostart (disabled by default, use -autostart true to enable)"
 fi
 
 log "=========================================="
