@@ -62,31 +62,39 @@ log "Device type: $DEVICE_TYPE"
 log "=========================================="
 
 # Step 1: Hammerhead autostart uninstall
-log "[1/5] Uninstalling Hammerhead autostart service..."
+log "[1/7] Uninstalling Hammerhead autostart service..."
 "$SCRIPT_DIR/hammerhead/uninstall.sh" || log "Hammerhead uninstall completed with warnings"
 
 # Step 2: Clock uninstall
-log "[2/5] Uninstalling clock service..."
+log "[2/7] Uninstalling clock service..."
 "$SCRIPT_DIR/clock/uninstall.sh" || log "Clock uninstall completed with warnings"
 
-# Step 3: PTP uninstall
-log "[3/5] Uninstalling PTP..."
+# Step 3: phc2sys uninstall
+log "[3/7] Uninstalling phc2sys..."
+"$SCRIPT_DIR/phc2sys/uninstall.sh" || log "phc2sys uninstall completed with warnings"
+
+# Step 4: PTP slave uninstall
+log "[4/7] Uninstalling PTP slave..."
+"$SCRIPT_DIR/ptp_slave/uninstall.sh" || log "PTP slave uninstall completed with warnings"
+
+# Step 5: PTP uninstall
+log "[5/7] Uninstalling PTP..."
 "$SCRIPT_DIR/ptp/uninstall.sh" || log "PTP uninstall completed with warnings"
 
-# Step 4: Network uninstall (OnLogic only)
+# Step 6: Network uninstall (OnLogic only)
 if [ "$DEVICE_TYPE" == "onlogic" ]; then
-  log "[4/5] Uninstalling network..."
+  log "[6/7] Uninstalling network..."
   "$SCRIPT_DIR/network/uninstall.sh" || log "Network uninstall completed with warnings"
 else
-  log "[4/5] Skipping network uninstall (Jetson)"
+  log "[6/7] Skipping network uninstall (Jetson)"
 fi
 
-# Step 5: MTU uninstall (Jetson only - OnLogic MTU is handled via netplan in network uninstall)
+# Step 7: MTU uninstall (Jetson only - OnLogic MTU is handled via netplan in network uninstall)
 if [ "$DEVICE_TYPE" == "jetson" ]; then
-  log "[5/5] Uninstalling MTU for eth0..."
+  log "[7/7] Uninstalling MTU for eth0..."
   "$SCRIPT_DIR/mtu/uninstall.sh" eth0 || log "MTU uninstall completed with warnings"
 else
-  log "[5/5] Skipping MTU uninstall (OnLogic - handled via netplan)"
+  log "[7/7] Skipping MTU uninstall (OnLogic - handled via netplan)"
 fi
 
 log "=========================================="
