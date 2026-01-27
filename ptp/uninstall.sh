@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# PTP (LinuxPTP) cleanup script
-# Usage: ./cleanup.sh
+# PTP (LinuxPTP) uninstall script
+# Usage: ./uninstall.sh
 
 set -e
 
@@ -14,7 +14,6 @@ log "Starting PTP cleanup..."
 # Variables
 PTP_SERVICE_NAME="linuxptp"
 PTP_CONFIG_PATH="/etc/linuxptp/linuxptp.conf"
-PTP_LOG_PATH="/var/log/linuxptp.log"
 PTP_SERVICE_FILE="/etc/systemd/system/linuxptp.service"
 
 # Stop the systemd service if running
@@ -46,12 +45,4 @@ else
     log "Configuration file $PTP_CONFIG_PATH not found."
 fi
 
-# Remove the log file
-if [ -f "$PTP_LOG_PATH" ]; then
-    log "Removing log file: $PTP_LOG_PATH"
-    sudo rm -f "$PTP_LOG_PATH"
-else
-    log "Log file $PTP_LOG_PATH not found."
-fi
-
-log "PTP cleanup completed."
+log "PTP uninstall completed."

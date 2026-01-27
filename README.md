@@ -25,6 +25,9 @@ hdk_setup/
 ├── clock/               # Jetson clock optimization
 │   ├── install.sh
 │   └── uninstall.sh
+├── hammerhead/          # Hammerhead autostart service
+│   ├── install.sh
+│   └── uninstall.sh
 ├── mtu/                 # MTU (jumbo frames) configuration
 │   ├── install.sh
 │   └── uninstall.sh
@@ -63,6 +66,17 @@ hdk_setup/
 ```bash
 ./install.sh -d onlogic -cam_if1 ethLAN2 -cam_if2 ethLAN3
 ```
+
+### With Hammerhead Autostart
+
+To automatically start Hammerhead on boot:
+
+```bash
+./install.sh -d jetson -autostart true
+./install.sh -d onlogic -autostart true
+```
+
+The `-autostart` flag is `false` by default.
 
 ## Uninstallation
 
@@ -117,6 +131,15 @@ Maximizes CPU/GPU clocks for optimal real-time performance:
 - Maximizes VIC (Video Image Compositor) frequency if available
 - Automatically restores default clocks on shutdown
 
+### Hammerhead Autostart (Optional)
+
+Creates a systemd service to automatically start Hammerhead on boot:
+
+- Runs as the user who installs the service (to access user config files)
+- Starts after network, DHCP, and PTP services are ready
+- Automatically restarts on failure
+- Updates journald log level for debug output visibility
+
 ## Requirements
 
 - Linux (Ubuntu/Debian-based)
@@ -130,3 +153,4 @@ Maximizes CPU/GPU clocks for optimal real-time performance:
 - `clocks.service` - Clock maximization at startup (both platforms)
 - `clocks-restore.service` - Clock restoration on shutdown (both platforms)
 - `isc-dhcp-server` - DHCP server for camera networks (OnLogic)
+- `hammerhead.service` - Hammerhead autostart (optional, both platforms)

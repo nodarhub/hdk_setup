@@ -17,3 +17,6 @@ version.py
 # The site data can be large. Do not commit it.
 docs/
 site/
+
+# logs
+log*

@@ -48,9 +48,6 @@ User=$RUN_USER
 ExecStart=/usr/bin/stdbuf -oL -eL $HAMMERHEAD_BIN
 Restart=on-failure
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=hammerhead
 
 [Install]
 WantedBy=multi-user.target
