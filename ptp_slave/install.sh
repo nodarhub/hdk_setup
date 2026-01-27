@@ -103,9 +103,6 @@ Type=simple
 ExecStart=/bin/bash -c 'ptp4l -2 -i $INTERFACE -f $PTP_SLAVE_CONFIG_PATH -m -H || ptp4l -2 -i $INTERFACE -f $PTP_SLAVE_CONFIG_PATH -m -S'
 Restart=on-failure
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=linuxptp-slave
 
 [Install]
 WantedBy=multi-user.target

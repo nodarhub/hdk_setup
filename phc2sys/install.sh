@@ -59,9 +59,6 @@ Type=simple
 ExecStart=/usr/sbin/phc2sys -s $INTERFACE -c CLOCK_REALTIME -O 0 -S 0.1 -R 4 -m
 Restart=on-failure
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=phc2sys
 
 [Install]
 WantedBy=multi-user.target
