@@ -95,7 +95,7 @@ log "Creating systemd service file at $PTP_SLAVE_SERVICE_FILE..."
 sudo tee "$PTP_SLAVE_SERVICE_FILE" > /dev/null << EOF
 [Unit]
 Description=LinuxPTP Slave (ptp4l) Service
-After=network.target linuxptp.service
+After=network.target
 Wants=network.target
 
 [Service]
