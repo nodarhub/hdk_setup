@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # MTU cleanup script
-# Usage: ./cleanup.sh <interface-name>
+# Usage: ./uninstall.sh <interface-name>
 
 set -e
 

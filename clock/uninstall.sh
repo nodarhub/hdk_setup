@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Clock service cleanup script (Jetson clocks)
-# Usage: ./cleanup.sh
+# Usage: ./uninstall.sh
 
 set -e
 
