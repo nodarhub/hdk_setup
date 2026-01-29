@@ -13,6 +13,7 @@ This repository provides automated setup for:
 
 - **Network Configuration** - Multi-interface setup with jumbo frames (MTU 9000) for high-bandwidth camera streaming
 - **PTP (Precision Time Protocol)** - Sub-microsecond clock synchronization across devices (with hardware timestamping)
+- **External Time Sync** - PTP slave and PHC2SYS for synchronizing to an external PTP grandmaster (OnLogic only)
 - **Clock Optimization** - Jetson CPU/GPU clock maximization for real-time processing
 - **DHCP Server** - Automatic IP assignment for connected cameras
 
@@ -42,7 +43,13 @@ hdk_setup/
 │           ├── 01-ethLAN1.yaml
 │           ├── 10-camera.yaml
 │           └── 01-l4tbr0.yaml
-└── ptp/                 # Linux PTP setup
+├── ptp/                 # Linux PTP master setup
+│   ├── install.sh
+│   └── uninstall.sh
+├── ptp_slave/           # Linux PTP slave setup (external time sync)
+│   ├── install.sh
+│   └── uninstall.sh
+└── phc2sys/             # PHC to system clock sync
     ├── install.sh
     └── uninstall.sh
 ```
@@ -109,18 +116,35 @@ Configures multi-interface network setup:
 |-----------|---------------|---------|
 | ethLAN0 | DHCP | Management interface |
 | ethLAN1 | Static (10.10.1.10/24) | Gateway interface |
-| ethLAN2-5 | Static (10.10.x.1), MTU 9000 | Camera interfaces |
+| ethLAN2, 3, 5 | Static (10.10.x.1), MTU 9000 | Camera interfaces |
+| ethLAN4 | Static (192.168.30.25/24) | External PTP time sync |
 
-Also configures ISC DHCP server with subnets for each camera interface:
-- 10.10.2.0/24, 10.10.3.0/24, 10.10.4.0/24, 10.10.5.0/24
+Also configures ISC DHCP server with subnets for camera interfaces:
+- 10.10.2.0/24, 10.10.3.0/24, 10.10.5.0/24
 
-### PTP (Both platforms)
+### PTP Master (Both platforms)
 
 Installs and configures Linux PTP (ptp4l) for precision time synchronization:
 
-- Operates as PTP master clock
+- Operates as PTP master clock for connected cameras
 - Uses E2E (End-to-End) delay mechanism
 - Creates `linuxptp.service` for automatic startup and restart on failure
+
+### PTP Slave (OnLogic only)
+
+Configures the device as a PTP slave to synchronize time from an external PTP grandmaster:
+
+- Operates as PTP slave clock on ethLAN4
+- Syncs to external PTP master (e.g., network grandmaster clock)
+- Creates `linuxptp-slave.service` for automatic startup
+
+### PHC2SYS (OnLogic only)
+
+Synchronizes the system clock from the PTP hardware clock:
+
+- Transfers time from the PTP hardware clock (PHC) to CLOCK_REALTIME
+- Runs after PTP slave has synchronized with the external master
+- Creates `phc2sys.service` for automatic startup
 
 ### Clock (Both platforms)
 
@@ -149,7 +173,9 @@ Creates a systemd service to automatically start Hammerhead on boot:
 
 ## Services Installed
 
-- `linuxptp.service` - PTP clock synchronization (both platforms)
+- `linuxptp.service` - PTP master clock synchronization (both platforms)
+- `linuxptp-slave.service` - PTP slave clock synchronization (OnLogic)
+- `phc2sys.service` - PHC to system clock sync (OnLogic)
 - `clocks.service` - Clock maximization at startup (both platforms)
 - `clocks-restore.service` - Clock restoration on shutdown (both platforms)
 - `isc-dhcp-server` - DHCP server for camera networks (OnLogic)
