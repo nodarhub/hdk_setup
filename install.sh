@@ -71,40 +71,44 @@ log "HDK Setup Script"
 log "Device type: $DEVICE_TYPE"
 log "=========================================="
 
-# Step 1: MTU Setup (Jetson only - OnLogic MTU is set via netplan in network setup)
+# Step 1: Disable background services
+log "[1/6] Disabling background services..."
+"$SCRIPT_DIR/background_services/disable_background_services.sh"
+
+# Step 2: MTU Setup (Jetson only - OnLogic MTU is set via netplan in network setup)
 if [ "$DEVICE_TYPE" == "jetson" ]; then
-  log "[1/5] Setting up MTU for eth0..."
+  log "[2/6] Setting up MTU for eth0..."
   "$SCRIPT_DIR/mtu/install.sh" eth0
 else
-  log "[1/5] Skipping MTU setup (OnLogic - handled via netplan)"
+  log "[2/6] Skipping MTU setup (OnLogic - handled via netplan)"
 fi
 
-# Step 2: Network Setup (OnLogic only)
+# Step 3: Network Setup (OnLogic only)
 if [ "$DEVICE_TYPE" == "onlogic" ]; then
-  log "[2/5] Setting up network for $CAMERA_INTERFACE_1 and $CAMERA_INTERFACE_2..."
+  log "[3/6] Setting up network for $CAMERA_INTERFACE_1 and $CAMERA_INTERFACE_2..."
   "$SCRIPT_DIR/network/install.sh" "$CAMERA_INTERFACE_1" "$CAMERA_INTERFACE_2"
 else
-  log "[2/5] Skipping network setup (Jetson)"
+  log "[3/6] Skipping network setup (Jetson)"
 fi
 
-# Step 3: PTP Setup
-log "[3/5] Setting up PTP..."
+# Step 4: PTP Setup
+log "[4/6] Setting up PTP..."
 if [ "$DEVICE_TYPE" == "jetson" ]; then
   "$SCRIPT_DIR/ptp/install.sh" -i eth0
 elif [ "$DEVICE_TYPE" == "onlogic" ]; then
   "$SCRIPT_DIR/ptp/install.sh" -i "$CAMERA_INTERFACE_1" -i "$CAMERA_INTERFACE_2"
 fi
 
-# Step 4: Clock Setup
-log "[4/5] Setting up clock service..."
+# Step 5: Clock Setup
+log "[5/6] Setting up clock service..."
 "$SCRIPT_DIR/clock/install.sh"
 
-# Step 5: Hammerhead Autostart (optional)
+# Step 6: Hammerhead Autostart (optional)
 if [ "$INSTALL_AUTOSTART" == "true" ]; then
-  log "[5/5] Setting up Hammerhead autostart service..."
+  log "[6/6] Setting up Hammerhead autostart service..."
   "$SCRIPT_DIR/hammerhead/install.sh"
 else
-  log "[5/5] Skipping Hammerhead autostart (disabled by default, use -autostart true to enable)"
+  log "[6/6] Skipping Hammerhead autostart (disabled by default, use -autostart true to enable)"
 fi
 
 log "=========================================="
