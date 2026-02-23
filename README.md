@@ -11,6 +11,7 @@ Hardware Development Kit setup scripts for configuring Linux-based hardware for 
 
 This repository provides automated setup for:
 
+- **Background Services** - Disables unnecessary system services (updates, indexing, diagnostics) for a stable real-time environment
 - **Network Configuration** - Multi-interface setup with jumbo frames (MTU 9000) for high-bandwidth camera streaming
 - **PTP (Precision Time Protocol)** - Sub-microsecond clock synchronization across devices (with hardware timestamping)
 - **Clock Optimization** - Jetson CPU/GPU clock maximization for real-time processing
@@ -22,6 +23,8 @@ This repository provides automated setup for:
 hdk_setup/
 ├── install.sh           # Main installation script
 ├── uninstall.sh         # Main uninstallation script
+├── background_services/ # Disable unnecessary system services
+│   └── disable_background_services.sh
 ├── clock/               # Jetson clock optimization
 │   ├── install.sh
 │   └── uninstall.sh
@@ -93,6 +96,17 @@ The `-autostart` flag is `false` by default.
 ```
 
 ## Modules
+
+### Background Services (Both platforms)
+
+Disables unnecessary system services to ensure a stable, predictable real-time environment:
+
+- **Update services** - apt-daily, unattended-upgrades, update-notifier, packagekit
+- **Indexing services** - Tracker file indexing and metadata extraction
+- **Diagnostic services** - ubuntu-report, apport crash reporting, MOTD news
+- **Other** - Bluetooth, speech-dispatcher, firmware update checks
+
+Also removes cached update notifications and suppresses future release upgrade prompts. This step is not reverted during uninstall, as these services are generally undesirable on real-time target devices.
 
 ### MTU
 
