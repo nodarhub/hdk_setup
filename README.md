@@ -223,6 +223,21 @@ Creates a systemd service to automatically start Hammerhead on boot:
 - Automatically restarts on failure
 - Updates journald log level for debug output visibility
 
+**Managing the Hammerhead service (when installed with `-autostart true`):**
+
+```bash
+# Check service status
+sudo systemctl status hammerhead
+
+# Start / stop / restart
+sudo systemctl start hammerhead
+sudo systemctl stop hammerhead
+sudo systemctl restart hammerhead
+
+# Follow logs in real time
+sudo journalctl -u hammerhead -f
+```
+
 ## Requirements
 
 - Linux (Ubuntu/Debian-based)
