@@ -129,7 +129,7 @@ The `-autostart` flag is `false` by default.
 ./uninstall.sh -d onlogic
 ```
 
-The uninstall script always attempts to clean up PTP slave and PHC2SYS services. These are safe no-ops if the services were never installed.
+The uninstall script always attempts to clean up PTP slave and PHC2SYS services (safe no-ops if never installed) and re-enables `systemd-timesyncd`.
 
 ## Modules
 
@@ -188,9 +188,12 @@ Installs and configures Linux PTP (ptp4l) for precision time synchronization:
 
 Configures the device as a PTP slave to synchronize time from an external PTP grandmaster. Only installed when `-external-time-sync true` is passed.
 
-- Operates as PTP slave clock on ethLAN4
+- Operates as PTP slave clock on ethLAN4 using **Layer 2 PTP** (Ethernet frames, not IP)
+- The IP address on ethLAN4 is not required for PTP synchronization since Layer 2 is used. If `-sync-ip` is specified, it is recommended to be on the same subnet as the PTP grandmaster for debugging and management purposes (e.g., ping, SSH)
 - Syncs to external PTP master (e.g., network grandmaster clock)
 - Creates `linuxptp-slave.service` for automatic startup
+
+> **WARNING:** When `-external-time-sync true` is enabled, `systemd-timesyncd` (NTP) is disabled to prevent conflicts with PHC2SYS. This means the system clock is **entirely dependent on the external PTP master**. If the PTP master is unavailable, the system clock will not be synchronized and **may drift or reset to 1970**. **Always ensure a PTP grandmaster is reachable on ethLAN4 before enabling this option.**
 
 ### PHC2SYS (OnLogic only, opt-in)
 
@@ -199,6 +202,7 @@ Synchronizes the system clock from the PTP hardware clock. Only installed when `
 - Transfers time from the PTP hardware clock (PHC) to CLOCK_REALTIME
 - Runs after PTP slave has synchronized with the external master
 - Creates `phc2sys.service` for automatic startup
+- `systemd-timesyncd` is disabled during install to give PHC2SYS sole control of the system clock (re-enabled on uninstall)
 
 ### Clock (Both platforms)
 
