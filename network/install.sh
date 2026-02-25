@@ -6,14 +6,36 @@ log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $@"
 }
 
-# Usage check
-if [ "$#" -ne 2 ]; then
-  echo "Usage: $0 <INTERFACE_1> <INTERFACE_2>"
+# Usage check — first two args are positional (interfaces), rest are optional flags
+if [ "$#" -lt 2 ]; then
+  echo "Usage: $0 <INTERFACE_1> <INTERFACE_2> [-external-time-sync <true|false>] [-sync-ip <ip/cidr>]"
   exit 1
 fi
 
 IFACE1="$1"
 IFACE2="$2"
+shift 2
+
+# Optional flags
+EXTERNAL_TIME_SYNC=false
+SYNC_IP="192.168.30.25/24"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -external-time-sync)
+      EXTERNAL_TIME_SYNC="$2"
+      shift 2
+      ;;
+    -sync-ip)
+      SYNC_IP="$2"
+      shift 2
+      ;;
+    *)
+      echo "Error: Unknown option '$1'"
+      exit 1
+      ;;
+  esac
+done
 
 SCRIPT_DIR="$(cd -- "$(dirname "$0")" >/dev/null 2>&1; pwd -P)"
 CONFIG_DIR="$SCRIPT_DIR/config"
@@ -96,6 +118,31 @@ EOF
 log "Installing Netplan configuration"
 sudo cp "$CONFIG_DIR/netplan"/*.yaml /etc/netplan/
 sudo chmod 600 /etc/netplan/*.yaml
+
+# If external time sync is enabled, reconfigure ethLAN4 for PTP sync instead of camera
+if [ "$EXTERNAL_TIME_SYNC" == "true" ]; then
+  log "External time sync enabled — reconfiguring ethLAN4 for PTP sync (IP: $SYNC_IP)"
+
+  # Modify ethLAN4 section in netplan: remove mtu, change address, add link-local
+  sudo sed -i '/^    ethLAN4:/,/^    eth\|^$/  {
+    /mtu: 9000/d
+    /dhcp4: no/d
+    s|addresses:|addresses:|
+    s|- 10\.10\.4\.1/24|- '"$SYNC_IP"'|
+  }' /etc/netplan/10-camera.yaml
+
+  # Add link-local: [] after accept-ra line in ethLAN4 block if not already present
+  if ! grep -A 10 'ethLAN4:' /etc/netplan/10-camera.yaml | grep -q 'link-local:'; then
+    sudo sed -i '/^    ethLAN4:/,/^    eth\|^$/ {
+      /accept-ra: no/a\      link-local: []
+    }' /etc/netplan/10-camera.yaml
+  fi
+
+  # Remove ethLAN4 DHCP subnet block from dhcpd.conf
+  log "Removing ethLAN4 DHCP subnet from /etc/dhcp/dhcpd.conf"
+  sudo sed -i '/# Subnet configuration for ethLAN4/,/^}/d' /etc/dhcp/dhcpd.conf
+fi
+
 sudo netplan generate
 sudo netplan apply 2>/dev/null
 sleep 5
