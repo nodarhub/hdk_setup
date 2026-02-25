@@ -132,7 +132,7 @@ if [ "$EXTERNAL_TIME_SYNC" == "true" ]; then
   }' /etc/netplan/10-camera.yaml
 
   # Add link-local: [] after accept-ra line in ethLAN4 block if not already present
-  if ! grep -A 10 'ethLAN4:' /etc/netplan/10-camera.yaml | grep -q 'link-local:'; then
+  if ! sudo grep -A 10 'ethLAN4:' /etc/netplan/10-camera.yaml | grep -q 'link-local:'; then
     sudo sed -i '/^    ethLAN4:/,/^    eth\|^$/ {
       /accept-ra: no/a\      link-local: []
     }' /etc/netplan/10-camera.yaml
