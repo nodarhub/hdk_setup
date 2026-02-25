@@ -37,4 +37,3 @@ network:
       addresses:
         - 10.10.5.1/24
       optional: true
-
