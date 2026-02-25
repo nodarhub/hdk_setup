@@ -69,11 +69,11 @@ log "[1/7] Uninstalling Hammerhead autostart service..."
 log "[2/7] Uninstalling clock service..."
 "$SCRIPT_DIR/clock/uninstall.sh" || log "Clock uninstall completed with warnings"
 
-# Step 3: phc2sys uninstall
+# Step 3: PHC2SYS uninstall (safe no-op if never installed)
 log "[3/7] Uninstalling phc2sys..."
 "$SCRIPT_DIR/phc2sys/uninstall.sh" || log "phc2sys uninstall completed with warnings"
 
-# Step 4: PTP slave uninstall
+# Step 4: PTP Slave uninstall (safe no-op if never installed)
 log "[4/7] Uninstalling PTP slave..."
 "$SCRIPT_DIR/ptp_slave/uninstall.sh" || log "PTP slave uninstall completed with warnings"
 
