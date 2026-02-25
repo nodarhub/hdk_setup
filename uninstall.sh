@@ -77,6 +77,11 @@ log "[3/7] Uninstalling phc2sys..."
 log "[4/7] Uninstalling PTP slave..."
 "$SCRIPT_DIR/ptp_slave/uninstall.sh" || log "PTP slave uninstall completed with warnings"
 
+# Re-enable systemd-timesyncd in case it was disabled by external time sync
+log "[4/7] Re-enabling systemd-timesyncd..."
+sudo systemctl enable systemd-timesyncd 2>/dev/null || true
+sudo systemctl start systemd-timesyncd 2>/dev/null || true
+
 # Step 5: PTP uninstall
 log "[5/7] Uninstalling PTP..."
 "$SCRIPT_DIR/ptp/uninstall.sh" || log "PTP uninstall completed with warnings"

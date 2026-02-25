@@ -113,6 +113,9 @@ fi
 
 # Step 4: PTP Slave Setup (OnLogic only, when external time sync is enabled)
 if [ "$EXTERNAL_TIME_SYNC" == "true" ] && [ "$DEVICE_TYPE" == "onlogic" ]; then
+  log "[4/8] Disabling systemd-timesyncd (NTP) to avoid conflicts with PHC2SYS..."
+  sudo systemctl stop systemd-timesyncd 2>/dev/null || true
+  sudo systemctl disable systemd-timesyncd 2>/dev/null || true
   log "[4/8] Setting up PTP slave for ethLAN4..."
   "$SCRIPT_DIR/ptp_slave/install.sh" -i ethLAN4
 else
