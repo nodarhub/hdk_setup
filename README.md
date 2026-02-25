@@ -11,7 +11,7 @@ Hardware Development Kit setup scripts for configuring Linux-based hardware for 
 
 This repository provides automated setup for:
 
-- **Background Services** - Disables unnecessary OS services (updates, trackers, etc.) for real-time stability
+- **Background Services** - Disables unnecessary system services (updates, indexing, diagnostics) for a stable real-time environment
 - **Network Configuration** - Multi-interface setup with jumbo frames (MTU 9000) for high-bandwidth camera streaming
 - **PTP (Precision Time Protocol)** - Sub-microsecond clock synchronization across devices (with hardware timestamping)
 - **External Time Sync** - PTP slave and PHC2SYS for synchronizing to an external PTP grandmaster (OnLogic only, opt-in)
@@ -24,7 +24,7 @@ This repository provides automated setup for:
 hdk_setup/
 ├── install.sh           # Main installation script
 ├── uninstall.sh         # Main uninstallation script
-├── background_services/ # Disable unnecessary OS services
+├── background_services/ # Disable unnecessary system services
 │   └── disable_background_services.sh
 ├── clock/               # Jetson clock optimization
 │   ├── install.sh
@@ -133,14 +133,16 @@ The uninstall script always attempts to clean up PTP slave and PHC2SYS services.
 
 ## Modules
 
-### Background Services
+### Background Services (Both platforms)
 
-Disables unnecessary OS background services for real-time stability:
+Disables unnecessary system services to ensure a stable, predictable real-time environment:
 
-- Stops and masks automatic update services (apt-daily, unattended-upgrades)
-- Disables package management daemons (PackageKit, update-notifier)
-- Stops tracker/indexing services
-- Removes cached update data and suppresses upgrade prompts
+- **Update services** - apt-daily, unattended-upgrades, update-notifier, packagekit
+- **Indexing services** - Tracker file indexing and metadata extraction
+- **Diagnostic services** - ubuntu-report, apport crash reporting, MOTD news
+- **Other** - Bluetooth, speech-dispatcher, firmware update checks
+
+Also removes cached update notifications and suppresses future release upgrade prompts. This step is not reverted during uninstall, as these services are generally undesirable on real-time target devices.
 
 ### MTU
 
