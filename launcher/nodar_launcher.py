@@ -885,6 +885,7 @@ def _build_menu(cfg):
 
 def _launcher_menu(stdscr, colors, cfg):
     os.makedirs(cfg["records_dir"], exist_ok=True)
+    os.makedirs(os.path.dirname(cfg["master_config"]), exist_ok=True)
 
     menu     = _build_menu(cfg)
     selected = 0
