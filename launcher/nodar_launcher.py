@@ -21,6 +21,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import urllib.error
@@ -39,12 +40,14 @@ CFG_FILE_LOCAL = os.path.join(HERE, "nodar_launcher.cfg")
 
 # ── Installer constants ───────────────────────────────────────────────────────
 
-BASE_URL    = "https://downloads.nodarsensor.net"
-DATASET_URL = (
+BASE_URL        = "https://downloads.nodarsensor.net"
+DATASET_URL     = (
     "https://dz2ajpir85e0i.cloudfront.net/files/public-datasets"
     "/daytime-highway-01/nodar_data_day_highway_01_minimal.zip"
 )
-DATASET_ZIP = "nodar_data_day_highway_01_minimal.zip"
+DATASET_ZIP     = "nodar_data_day_highway_01_minimal.zip"
+CONFIG_BASE_URL = "https://dz2ajpir85e0i.cloudfront.net/files/docs/config"
+CONFIG_FILES    = ["master_config.ini", "intrinsics.ini", "extrinsics.ini"]
 
 UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}"
@@ -611,6 +614,9 @@ def _download_and_install(stdscr, colors, uuid, packages):
         os.makedirs(d, exist_ok=True)
 
     hh_pkg, nv_pkg = packages[0], packages[1]
+    hh_version   = hh_pkg.get("version", "unknown")
+    configs_dir  = os.path.join(DOWNLOAD_DIR, f"config_{hh_version}")
+    os.makedirs(configs_dir, exist_ok=True)
 
     items = [
         {
@@ -631,6 +637,14 @@ def _download_and_install(stdscr, colors, uuid, packages):
             "dest":  os.path.join(zips_dir, DATASET_ZIP),
             "done": 0, "total": 0, "state": "waiting",
         },
+    ] + [
+        {
+            "label": f"{f}  (config {hh_version})",
+            "url":   f"{CONFIG_BASE_URL}/{f}",
+            "dest":  os.path.join(configs_dir, f),
+            "done": 0, "total": 0, "state": "waiting",
+        }
+        for f in CONFIG_FILES
     ]
 
     def _redraw(status_line="  Downloading — please wait..."):
@@ -716,6 +730,16 @@ def _download_and_install(stdscr, colors, uuid, packages):
             stdscr.refresh()
             stdscr.getch()
             return False
+
+    # Populate the live config folder with any missing files from the downloaded set
+    live_config_dir = os.path.join(NODAR_DIR, "config")
+    os.makedirs(live_config_dir, exist_ok=True)
+    _redraw("  Copying missing config files...")
+    for f in CONFIG_FILES:
+        dest = os.path.join(live_config_dir, f)
+        src  = os.path.join(configs_dir, f)
+        if not os.path.isfile(dest) and os.path.isfile(src):
+            shutil.copy2(src, dest)
 
     # Prompt before leaving curses for apt
     rows, cols = stdscr.getmaxyx()
