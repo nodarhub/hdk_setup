@@ -830,16 +830,16 @@ def _make_actions(cfg):
         except FileNotFoundError:
             return ("stay", f"xdg-open not available — records are in:  {folder}")
 
-    def _open_master_config():
-        path = cfg["master_config"]
-        if not os.path.isfile(path):
-            return ("stay", f"File not found:  {path}")
+    def _open_config_folder():
+        folder = os.path.dirname(cfg["master_config"])
+        if not os.path.isdir(folder):
+            return ("stay", f"Directory not found:  {folder}")
         try:
-            subprocess.Popen(["xdg-open", path],
+            subprocess.Popen(["xdg-open", folder],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return ("stay", f"Opened  {path}")
+            return ("stay", f"Opened  {folder}")
         except FileNotFoundError:
-            return ("stay", f"xdg-open not available — file is at:  {path}")
+            return ("stay", f"xdg-open not available — config folder is at:  {folder}")
 
     def _show_version_info():
         cmd = cfg["hammerhead"] + ["--version"]
@@ -854,7 +854,7 @@ def _make_actions(cfg):
             lines = (e.output or "").rstrip().splitlines() or ["Command failed"]
         return ("overlay", lines)
 
-    return _run_with_viewer, _run_single, _open_records, _open_master_config, _show_version_info
+    return _run_with_viewer, _run_single, _open_records, _open_config_folder, _show_version_info
 
 # ── Menu definition ───────────────────────────────────────────────────────────
 
@@ -874,8 +874,8 @@ def _build_menu(cfg):
                  "Launch selected app without the other  ·  ◄ ► to switch", rs),
         MenuItem("Open Records Folder",
                  f"Browse saved recordings  ({cfg['records_dir']})", orec),
-        MenuItem("Open Master Config",
-                 f"Edit master_config.ini in the default text editor  ({cfg['master_config']})", omc),
+        MenuItem("Open Config Folder",
+                 f"Browse config files (master, intrinsics, extrinsics)  ({os.path.dirname(cfg['master_config'])})", omc),
         MenuItem("Show Version Info",
                  "Display the full output of  hammerhead --version", svi),
         MenuItem("Exit", "Quit this launcher", lambda: sys.exit(0)),
