@@ -33,8 +33,9 @@ import zipfile
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 HERE           = os.path.dirname(os.path.abspath(__file__))
-NODAR_DIR      = os.path.expanduser("~/.config/nodar")
-UUID_FILE      = os.path.join(NODAR_DIR, "uuid")
+NODAR_DIR             = os.path.expanduser("~/.config/nodar")
+UUID_FILE             = os.path.join(NODAR_DIR, "uuid")
+ACTIVATION_KEY_FILE   = os.path.join(NODAR_DIR, "activation_key")
 DOWNLOAD_DIR   = os.path.join(NODAR_DIR, "downloads")
 CFG_FILE       = os.path.join(NODAR_DIR, "nodar_launcher.cfg")
 CFG_FILE_LOCAL = os.path.join(HERE, "nodar_launcher.cfg")
@@ -54,12 +55,13 @@ UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}"
     r"-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
+ACT_KEY_RE = re.compile(r"^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$")
 
 # ── Layout ────────────────────────────────────────────────────────────────────
 
 MIN_W    = 80
 MIN_ROWS = 24   # download screen: 6 items × 3 rows from iy=4, status at rows-2
-MIN_ROWS_DISPLAYING_LOGO = 26
+MIN_ROWS_DISPLAYING_LOGO = 28  # extra 2 rows for activation-key section in menu
 
 # ── ASCII art ─────────────────────────────────────────────────────────────────
 
@@ -87,6 +89,20 @@ def _save_uuid(uuid):
     os.makedirs(NODAR_DIR, exist_ok=True)
     with open(UUID_FILE, "w") as f:
         f.write(uuid + "\n")
+
+
+def _load_activation_key():
+    try:
+        val = open(ACTIVATION_KEY_FILE).read().strip()
+        return val or None
+    except OSError:
+        return None
+
+
+def _save_activation_key(key):
+    os.makedirs(NODAR_DIR, exist_ok=True)
+    with open(ACTIVATION_KEY_FILE, "w") as f:
+        f.write(key + "\n")
 
 # ── System detection ──────────────────────────────────────────────────────────
 
@@ -454,12 +470,34 @@ def _wait_size_ok(stdscr):
         stdscr.refresh()
         stdscr.getch()
 
-# ── UUID input screen ─────────────────────────────────────────────────────────
+# ── Setup screen (UUID + activation key) ─────────────────────────────────────
 
-def _uuid_screen(stdscr, colors):
-    """Show UUID prompt. Returns validated UUID string or None (quit)."""
-    buf   = []
-    error = ""
+def _fmt_act_key(buf):
+    """Format raw key chars (max 20 uppercase alnum, no dashes) as XXXXX-XXXXX-XXXXX-XXXXX."""
+    s = "".join(buf)
+    parts = [s[i:i+5] for i in range(0, len(s), 5)]
+    return "-".join(parts)
+
+
+def _setup_screen(stdscr, colors, need_uuid, need_key, pre_uuid=None):
+    """Collect License ID and/or activation key from the user.
+
+    Returns (uuid_str, key_str) — each is None when not required — or None on quit.
+    Both fields are shown when needed; Tab switches focus between them.
+    The activation key is stored as-typed but displayed auto-formatted (XXXXX-XXXXX-XXXXX-XXXXX).
+    """
+    # "License ID    : " and "Activation Key : " are both 17 chars
+    LABEL_W  = 17
+    UUID_W   = 36
+    KEY_DISP = 23   # display width: XXXXX-XXXXX-XXXXX-XXXXX
+    KEY_MAX  = 20   # raw chars (no dashes)
+
+    LIC_EXAMPLE = "https://downloads.nodarsensor.net/12345678-9abc-def0-1234-56789abcdef0"
+
+    uuid_buf = list(pre_uuid) if pre_uuid else []
+    key_buf  = []   # raw chars only — dashes inserted on display
+    error    = ""
+    field    = 0 if need_uuid else 1  # 0 = License ID active, 1 = activation key active
     curses.curs_set(1)
 
     while True:
@@ -472,52 +510,112 @@ def _uuid_screen(stdscr, colors):
         )
 
         my = iy + 1
-        for line in [
-            "Welcome to the Nodar HDK Launcher.",
-            "",
-            "Hammerhead and Nodar Viewer are not yet installed on this system.",
-            "Please enter your customer UUID (from the email you received) to",
-            "download and install the software.",
-            "",
-        ]:
-            _put(stdscr, my, ix + 3, line, colors["normal"], iw - 4)
+
+        # Main instruction line
+        if need_uuid and need_key:
+            desc = "Please enter your License ID and activation key (from the email you received)."
+        elif need_uuid:
+            desc = "Hammerhead and Nodar Viewer are not yet installed. Please enter your License ID."
+        else:
+            desc = "Please enter your activation key (from the email you received)."
+
+        my = _put(stdscr, my, ix + 3, "Welcome to the Nodar HDK Launcher.", colors["normal"], iw - 4)
+        my += 1  # blank line
+        my = _put(stdscr, my, ix + 3, desc, colors["normal"], iw - 4, wrap=True)
+        my += 1  # blank line
+
+        # License ID location hint
+        if need_uuid:
+            my = _put(stdscr, my, ix + 3,
+                      "Your License ID is in the URL from Nodar — after the last slash:",
+                      colors["dim"], iw - 4)
+            my = _put(stdscr, my, ix + 3, f"  {LIC_EXAMPLE}", colors["dim"], iw - 4)
+            my += 1  # blank line
+
+        field_x  = ix + 3 + LABEL_W
+        uuid_row = key_row = None
+
+        if need_uuid:
+            uuid_row = my
+            active   = (field == 0)
+            _put(stdscr, my, ix + 3, "License ID    : ",
+                 colors["bold"] if active else colors["dim"])
+            _put(stdscr, my, field_x, ("".join(uuid_buf)).ljust(UUID_W),
+                 colors["sel"] if active else colors["normal"])
             my += 1
 
-        prompt  = "UUID : "
-        field_x = ix + 3 + len(prompt)
-        _put(stdscr, my, ix + 3, prompt, colors["bold"])
-        _put(stdscr, my, field_x, ("".join(buf)).ljust(36), colors["sel"])
+        if need_key:
+            if need_uuid:
+                my += 1  # blank line between the two fields
+            key_row = my
+            active  = (field == 1)
+            _put(stdscr, my, ix + 3, "Activation Key : ",
+                 colors["bold"] if active else colors["dim"])
+            _put(stdscr, my, field_x, _fmt_act_key(key_buf).ljust(KEY_DISP),
+                 colors["sel"] if active else colors["normal"])
+            my += 1
 
         if error:
-            _put(stdscr, my + 2, ix + 3, error, colors["err"], iw - 4)
+            my += 1
+            _put(stdscr, my, ix + 3, error, colors["err"], iw - 4)
 
-        hint = "  Enter  Confirm    q  Quit  "
-        _put(stdscr, rows - 2, ix + (iw - len(hint)) // 2, hint, colors["hint"])
+        if need_uuid and need_key:
+            tab_hint = "  Tab  Switch    Enter  Confirm (key optional)    Esc  Quit  "
+        elif need_key:
+            tab_hint = "  Enter  Confirm (or skip key)    Esc  Quit  "
+        else:
+            tab_hint = "  Enter  Confirm    Esc  Quit  "
+        _put(stdscr, rows - 2, ix + (iw - len(tab_hint)) // 2, tab_hint, colors["hint"])
 
         try:
-            stdscr.move(my, field_x + len(buf))
+            if field == 0 and uuid_row is not None:
+                stdscr.move(uuid_row, field_x + min(len(uuid_buf), UUID_W - 1))
+            elif field == 1 and key_row is not None:
+                stdscr.move(key_row, field_x + len(_fmt_act_key(key_buf)))
         except curses.error:
             pass
 
         stdscr.refresh()
-        key = stdscr.getch()
+        k = stdscr.getch()
 
-        if key in (curses.KEY_ENTER, ord("\n"), ord("\r")):
-            uuid = "".join(buf).strip()
-            if UUID_RE.match(uuid):
-                curses.curs_set(0)
-                return uuid
-            error = "Invalid UUID — expected format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-        elif key in (curses.KEY_BACKSPACE, 127, 8):
-            if buf:
-                buf.pop()
+        if k == ord("\t") and need_uuid and need_key:
+            field = 1 - field
             error = ""
-        elif key in (ord("q"), 27):
+        elif k in (curses.KEY_ENTER, ord("\n"), ord("\r")):
+            valid = True
+            if need_uuid:
+                if not UUID_RE.match("".join(uuid_buf).strip()):
+                    error = "Invalid License ID — expected: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    valid = False
+            if valid and need_key and key_buf:
+                # non-empty key must match the full format
+                if not ACT_KEY_RE.match(_fmt_act_key(key_buf)):
+                    error = "Invalid key — expected format: XXXXX-XXXXX-XXXXX-XXXXX"
+                    valid = False
+            if valid:
+                curses.curs_set(0)
+                return (
+                    "".join(uuid_buf).strip() if need_uuid else None,
+                    _fmt_act_key(key_buf) if (need_key and key_buf) else None,
+                )
+        elif k in (curses.KEY_BACKSPACE, 127, 8):
+            if field == 0 and uuid_buf:
+                uuid_buf.pop()
+            elif field == 1 and key_buf:
+                key_buf.pop()
+            error = ""
+        elif k == 27:  # Esc — 'q' is a valid key character so not used as quit
             curses.curs_set(0)
             return None
-        elif 32 <= key < 128 and len(buf) < 36:
-            buf.append(chr(key))
-            error = ""
+        elif 32 <= k < 128:
+            if field == 0 and len(uuid_buf) < UUID_W:
+                uuid_buf.append(chr(k))
+                error = ""
+            elif field == 1 and len(key_buf) < KEY_MAX:
+                c = chr(k).upper()
+                if c.isalnum():  # letters and digits only; dashes auto-inserted on display
+                    key_buf.append(c)
+                    error = ""
 
 # ── Installer: detect system + confirm ───────────────────────────────────────
 
@@ -954,7 +1052,7 @@ def _build_menu(cfg):
 
 # ── Launcher menu ─────────────────────────────────────────────────────────────
 
-def _launcher_menu(stdscr, colors, cfg):
+def _launcher_menu(stdscr, colors, cfg, act_key=None):
     os.makedirs(cfg["records_dir"], exist_ok=True)
     os.makedirs(os.path.dirname(cfg["master_config"]), exist_ok=True)
 
@@ -993,6 +1091,14 @@ def _launcher_menu(stdscr, colors, cfg):
                 my = _put(stdscr, my, ix + menu_buf, title_s, colors["normal"], menu_inner)
                 my = _put(stdscr, my, ix + menu_buf, desc_s,  colors["dim"], menu_inner)
             my += 1  # blank line
+
+        # Activation key display (two rows above the hint separator)
+        if act_key and rows - 5 >= my:
+            instr = "Copy and paste this key to Hammerhead when prompted at the first run."
+            _put(stdscr, rows - 5, ix + (iw - len(instr)) // 2, instr,
+                 colors["hint"], iw)
+            _put(stdscr, rows - 4, ix + (iw - len(act_key)) // 2, act_key,
+                 colors["desc"] | curses.A_BOLD)
 
         # Draw the navigation hint
         hint_sep = rows - 3
@@ -1071,14 +1177,26 @@ def _app(stdscr):
     hh_ok = _is_installed("hammerhead")
     nv_ok = _is_installed("nodar_viewer")
 
-    if not (hh_ok and nv_ok):
-        uuid = _load_uuid()
-        if uuid is None:
-            uuid = _uuid_screen(stdscr, colors)
-            if uuid is None:
-                return
-            _save_uuid(uuid)
+    uuid    = _load_uuid()
+    act_key = _load_activation_key()
 
+    # UUID is considered provided when both packages are already installed.
+    need_uuid = (uuid is None) and not (hh_ok and nv_ok)
+    need_key  = (act_key is None)
+
+    if need_uuid or need_key:
+        result = _setup_screen(stdscr, colors, need_uuid, need_key, pre_uuid=uuid)
+        if result is None:
+            return
+        new_uuid, new_key = result
+        if new_uuid is not None:
+            uuid = new_uuid
+            _save_uuid(uuid)
+        if new_key is not None:
+            act_key = new_key
+            _save_activation_key(act_key)
+
+    if not (hh_ok and nv_ok):
         packages = _detect_and_confirm(stdscr, colors, uuid)
         if packages is None:
             return
@@ -1087,7 +1205,7 @@ def _app(stdscr):
             return
 
     cfg = load_config()
-    _launcher_menu(stdscr, colors, cfg)
+    _launcher_menu(stdscr, colors, cfg, act_key)
 
 
 def main():
