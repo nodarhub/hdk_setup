@@ -56,8 +56,8 @@ UUID_RE = re.compile(
 
 # ── Layout ────────────────────────────────────────────────────────────────────
 
-DESIGN_W = 100
-MIN_ROWS  = 32
+MIN_W    = 80
+MIN_ROWS = 24
 
 # ── ASCII art ─────────────────────────────────────────────────────────────────
 
@@ -397,8 +397,8 @@ def _draw_header(stdscr, colors, subtitle):
     Returns (bx, bw, inner_w, sep_row).
     """
     rows, cols = stdscr.getmaxyx()
-    bx      = (cols - DESIGN_W) // 2
-    bw      = DESIGN_W
+    bx      = 0
+    bw      = cols
     inner_w = bw - 2
 
     _box(stdscr, 0, bx, rows, bw)
@@ -420,7 +420,7 @@ def _draw_header(stdscr, colors, subtitle):
 
 def _size_ok(stdscr):
     rows, cols = stdscr.getmaxyx()
-    return cols >= DESIGN_W and rows >= MIN_ROWS
+    return cols >= MIN_W and rows >= MIN_ROWS
 
 # ── UUID input screen ─────────────────────────────────────────────────────────
 
@@ -435,7 +435,7 @@ def _uuid_screen(stdscr, colors):
         stdscr.erase()
 
         if not _size_ok(stdscr):
-            msg = f"  Terminal too small — need {DESIGN_W}×{MIN_ROWS}, currently {cols}×{rows}."
+            msg = f"  Terminal too small — need {MIN_W}×{MIN_ROWS}, currently {cols}×{rows}."
             _put(stdscr, rows // 2, max(0, (cols - len(msg)) // 2), msg[:cols], curses.A_BOLD)
             stdscr.refresh()
             stdscr.getch()
@@ -811,48 +811,37 @@ def _open_in_terminal(cmd_list):
     return False, None
 
 
-_SINGLE_APPS     = ("Hammerhead", "Nodar Viewer")
-_SINGLE_CMD_KEYS = ("hammerhead", "nodar_viewer")
-_single_app_idx  = [0]
-TOGGLE_ITEM_IDX  = 1
+_SINGLE_APPS     = ("Hammerhead", "Nodar Viewer", "Hammerhead + Nodar Viewer")
+_SINGLE_CMD_KEYS = ("hammerhead", "nodar_viewer", None)  # None → launch both
+_single_app_idx  = [2]
+TOGGLE_ITEM_IDX  = 0
 
 
 def _make_actions(cfg):
-    def _run_single():
-        name = _SINGLE_APPS[_single_app_idx[0]]
-        cmd  = cfg[_SINGLE_CMD_KEYS[_single_app_idx[0]]]
+    def _run_launch():
+        idx  = _single_app_idx[0]
+        name = _SINGLE_APPS[idx]
+        if idx == 2:  # Hammerhead + Nodar Viewer
+            vcmd, hcmd = cfg["nodar_viewer"], cfg["hammerhead"]
+            viewer_ok = False
+            try:
+                subprocess.Popen(vcmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                viewer_ok = True
+            except FileNotFoundError:
+                pass
+            ok, term = _open_in_terminal(hcmd)
+            if ok and viewer_ok:
+                return ("stay", f"Launched Nodar Viewer and Hammerhead  ({term})")
+            if ok:
+                return ("stay", f"Hammerhead launched in {term}  (Nodar Viewer not found)")
+            if viewer_ok:
+                return ("stay", "Nodar Viewer launched — could not open a terminal for Hammerhead")
+            return ("stay", "Launch failed — check commands in config")
+        cmd = cfg[_SINGLE_CMD_KEYS[idx]]
         ok, term = _open_in_terminal(cmd)
         if ok:
             return ("stay", f"{name} launched in a new {term} window")
         return ("stay", "No terminal emulator found — install gnome-terminal or xterm")
-
-    def _run_with_viewer():
-        vcmd, hcmd = cfg["nodar_viewer"], cfg["hammerhead"]
-        viewer_ok = False
-        try:
-            subprocess.Popen(vcmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            viewer_ok = True
-        except FileNotFoundError:
-            pass
-        ok, term = _open_in_terminal(hcmd)
-        if ok and viewer_ok:
-            return ("stay", f"Launched Nodar Viewer and Hammerhead  ({term})")
-        if ok:
-            return ("stay", f"Hammerhead launched in {term}  (Nodar Viewer not found)")
-        if viewer_ok:
-            return ("stay", "Nodar Viewer launched — could not open a terminal for Hammerhead")
-        return ("stay", "Launch failed — check commands in config")
-
-    def _open_records():
-        folder = cfg["records_dir"]
-        if not os.path.isdir(folder):
-            return ("stay", f"Directory not found:  {folder}")
-        try:
-            subprocess.Popen(["xdg-open", folder],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return ("stay", f"Opened  {folder}")
-        except FileNotFoundError:
-            return ("stay", f"xdg-open not available — records are in:  {folder}")
 
     def _open_config_folder():
         folder = os.path.dirname(cfg["master_config"])
@@ -878,7 +867,7 @@ def _make_actions(cfg):
             lines = (e.output or "").rstrip().splitlines() or ["Command failed"]
         return ("overlay", lines)
 
-    return _run_with_viewer, _run_single, _open_records, _open_config_folder, _show_version_info
+    return _run_launch, _open_config_folder, _show_version_info
 
 # ── Menu definition ───────────────────────────────────────────────────────────
 
@@ -890,14 +879,10 @@ class MenuItem:
 
 
 def _build_menu(cfg):
-    rw, rs, orec, omc, svi = _make_actions(cfg)
+    launch, omc, svi = _make_actions(cfg)
     return [
-        MenuItem("Launch Hammerhead + Nodar Viewer",
-                 "Start real-time stereo matching with live viewer display", rw),
-        MenuItem("Launch Single App",
-                 "Launch selected app without the other  ·  ◄ ► to switch", rs),
-        MenuItem("Open Records Folder",
-                 f"Browse saved recordings  ({cfg['records_dir']})", orec),
+        MenuItem("Launch",
+                 "Selected app  ·  ◄ ► to switch", launch),
         MenuItem("Open Config Folder",
                  f"Browse config files (master, intrinsics, extrinsics)  ({os.path.dirname(cfg['master_config'])})", omc),
         MenuItem("Show Version Info",
@@ -921,8 +906,8 @@ def _launcher_menu(stdscr, colors, cfg):
         rows, cols = stdscr.getmaxyx()
         stdscr.erase()
 
-        if cols < DESIGN_W or rows < MIN_ROWS:
-            msg = (f"  Terminal too small — need {DESIGN_W}×{MIN_ROWS},"
+        if cols < MIN_W or rows < MIN_ROWS:
+            msg = (f"  Terminal too small — need {MIN_W}×{MIN_ROWS},"
                    f" currently {cols}×{rows}.  Resize and press any key.")
             _put(stdscr, rows // 2, max(0, (cols - len(msg)) // 2), msg[:cols], curses.A_BOLD)
             stdscr.refresh()
@@ -930,8 +915,8 @@ def _launcher_menu(stdscr, colors, cfg):
                 sys.exit(0)
             continue
 
-        bx      = (cols - DESIGN_W) // 2
-        bw      = DESIGN_W
+        bx      = 0
+        bw      = cols
         bh      = rows
         inner_w = bw - 2
 
@@ -983,7 +968,7 @@ def _launcher_menu(stdscr, colors, cfg):
                 if selected == TOGGLE_ITEM_IDX:
                     hint = "  ↑↓  Navigate    Enter  Launch    ◄►  Switch App    q  Quit  "
                 else:
-                    hint = "  ↑↓  Navigate    Enter / 1–6  Select    q  Quit  "
+                    hint = "  ↑↓  Navigate    Enter / 1–4  Select    q  Quit  "
                 _put(stdscr, hint_sep + 1,
                      bx + (bw - len(hint)) // 2, hint, colors["hint"])
 
