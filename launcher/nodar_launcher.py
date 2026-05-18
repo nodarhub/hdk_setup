@@ -24,6 +24,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import textwrap
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -57,7 +58,8 @@ UUID_RE = re.compile(
 # ── Layout ────────────────────────────────────────────────────────────────────
 
 MIN_W    = 80
-MIN_ROWS = 24
+MIN_ROWS = 20
+MIN_ROWS_DISPLAYING_LOGO = 26
 
 # ── ASCII art ─────────────────────────────────────────────────────────────────
 
@@ -334,6 +336,7 @@ def _hline(win, y, x, w, left=None, right=None):
 
 
 def _box(win, y, x, h, w):
+    """Draw a border rectangle and return the inner canvas (iy, ix, ih, iw)."""
     try:
         win.addch(y,         x,         curses.ACS_ULCORNER)
         win.addch(y,         x + w - 1, curses.ACS_URCORNER)
@@ -351,15 +354,30 @@ def _box(win, y, x, h, w):
         win.vline(y + 1, x + w - 1,  curses.ACS_VLINE, h - 2)
     except curses.error:
         pass
+    return y + 1, x + 1, h - 2, w - 2
 
 
-def _put(win, y, x, text, attr=0, max_w=None):
+def _put(win, y, x, text, attr=0, max_w=None, wrap=False):
+    """Draw text at (y, x) and return the next available row index.
+
+    With wrap=True and max_w set, text is word-wrapped across multiple rows.
+    Without wrap (default), text is truncated to max_w characters.
+    """
+    if wrap and max_w:
+        lines = textwrap.wrap(text, max_w) or [""]
+        for i, line in enumerate(lines):
+            try:
+                win.addstr(y + i, x, line, attr)
+            except curses.error:
+                pass
+        return y + len(lines)
     if max_w is not None:
         text = text[:max_w]
     try:
         win.addstr(y, x, text, attr)
     except curses.error:
         pass
+    return y + 1
 
 # ── Color init ────────────────────────────────────────────────────────────────
 
@@ -389,33 +407,38 @@ def _init_colors(stdscr):
         "err":    cp(4, curses.A_BOLD),
     }
 
-# ── Shared header drawing ─────────────────────────────────────────────────────
+# ── Frame drawing ─────────────────────────────────────────────────────────────
 
-def _draw_header(stdscr, colors, subtitle):
-    """Draw outer box, NODAR logo, subtitle, separator.
+def _draw_frame(stdscr, colors, subtitle):
+    """Draw the outer box, logo (when space permits), subtitle, and separator.
 
-    Returns (bx, bw, inner_w, sep_row).
+    Returns (iy, ix, ih, iw, sep_x, sep_w) where iy is the first row callers
+    may draw content (one past the header separator), and (sep_x, sep_w) are
+    the x and width to pass to _hline for any additional separator lines.
+    The header separator row is therefore iy - 1, inferrable by callers if needed.
     """
     rows, cols = stdscr.getmaxyx()
-    bx      = 0
-    bw      = cols
-    inner_w = bw - 2
+    box_iy, ix, _, iw = _box(stdscr, 0, 0, rows, cols)
 
-    _box(stdscr, 0, bx, rows, bw)
+    if rows >= MIN_ROWS_DISPLAYING_LOGO:
+        logo_max_w = max(len(l) for l in LOGO)
+        logo_x     = ix + (iw - logo_max_w) // 2
+        for i, line in enumerate(LOGO):
+            _put(stdscr, box_iy + i, logo_x, line, colors["art"], iw)
+        subtitle_row = box_iy + len(LOGO) + 1
+    else:
+        subtitle_row = box_iy + 1
 
-    logo_max_w = max(len(l) for l in LOGO)
-    logo_x     = bx + 1 + (inner_w - logo_max_w) // 2
-    for i, line in enumerate(LOGO):
-        _put(stdscr, 1 + i, logo_x, line, colors["art"], inner_w)
+    _put(stdscr, subtitle_row, ix + (iw - len(subtitle)) // 2, subtitle, colors["hint"])
+    if rows >= MIN_ROWS_DISPLAYING_LOGO:
+        sep_row = subtitle_row + 1
+    else:
+        sep_row = subtitle_row + 2
+    _hline(stdscr, sep_row, 0, cols)
 
-    logo_bottom  = 1 + len(LOGO)
-    subtitle_row = logo_bottom + 1
-    _put(stdscr, subtitle_row,
-         bx + 1 + (inner_w - len(subtitle)) // 2, subtitle, colors["hint"])
-
-    sep_row = subtitle_row + 1
-    _hline(stdscr, sep_row, bx, bw)
-    return bx, bw, inner_w, sep_row
+    iy = sep_row + 1
+    ih = rows - 1 - iy
+    return iy, ix, ih, iw, 0, cols
 
 
 def _size_ok(stdscr):
@@ -441,11 +464,11 @@ def _uuid_screen(stdscr, colors):
             stdscr.getch()
             continue
 
-        bx, bw, inner_w, sep_row = _draw_header(
+        iy, ix, ih, iw, sep_x, sep_w = _draw_frame(
             stdscr, colors, "Nodar Launcher  ·  First-time Setup"
         )
 
-        my = sep_row + 2
+        my = iy + 1
         for line in [
             "Welcome to the Nodar HDK Launcher.",
             "",
@@ -454,19 +477,19 @@ def _uuid_screen(stdscr, colors):
             "download and install the software.",
             "",
         ]:
-            _put(stdscr, my, bx + 4, line, colors["normal"], inner_w - 4)
+            _put(stdscr, my, ix + 3, line, colors["normal"], iw - 4)
             my += 1
 
         prompt  = "UUID : "
-        field_x = bx + 4 + len(prompt)
-        _put(stdscr, my, bx + 4, prompt, colors["bold"])
+        field_x = ix + 3 + len(prompt)
+        _put(stdscr, my, ix + 3, prompt, colors["bold"])
         _put(stdscr, my, field_x, ("".join(buf)).ljust(36), colors["sel"])
 
         if error:
-            _put(stdscr, my + 2, bx + 4, error, colors["err"], inner_w - 4)
+            _put(stdscr, my + 2, ix + 3, error, colors["err"], iw - 4)
 
         hint = "  Enter  Confirm    q  Quit  "
-        _put(stdscr, rows - 2, bx + (bw - len(hint)) // 2, hint, colors["hint"])
+        _put(stdscr, rows - 2, ix + (iw - len(hint)) // 2, hint, colors["hint"])
 
         try:
             stdscr.move(my, field_x + len(buf))
@@ -502,19 +525,48 @@ def _detect_and_confirm(stdscr, colors, uuid):
     """
     rows, cols = stdscr.getmaxyx()
     stdscr.erase()
-    bx, bw, inner_w, sep_row = _draw_header(
+    iy, ix, ih, iw, sep_x, sep_w = _draw_frame(
         stdscr, colors, "Nodar Launcher  ·  Installation"
     )
-    my = sep_row + 2
+    my = iy + 1
+
+    content_lines = []  # replay buffer for resize: (text, color) or None for blank
 
     def line(text, color=None):
         nonlocal my
-        _put(stdscr, my, bx + 4, text, color or colors["normal"], inner_w - 4)
+        c = color or colors["normal"]
+        content_lines.append((text, c))
+        _put(stdscr, my, ix + 3, text, c, iw - 4)
         my += 1
         stdscr.refresh()
 
+    def blank():
+        nonlocal my
+        content_lines.append(None)
+        my += 1
+
+    hint = "  Enter  Download & Install    q  Cancel  "
+
+    def _redraw_confirm():
+        _rows, _cols = stdscr.getmaxyx()
+        stdscr.erase()
+        _iy, _ix, _ih, _iw, _sx, _sw = _draw_frame(
+            stdscr, colors, "Nodar Launcher  ·  Installation"
+        )
+        _my = _iy + 1
+        for entry in content_lines:
+            if entry is None:
+                _my += 1
+            else:
+                _put(stdscr, _my, _ix + 3, entry[0], entry[1], _iw - 4)
+                _my += 1
+        if _rows - 3 > _my:
+            _hline(stdscr, _rows - 3, 0, _sw)
+        _put(stdscr, _rows - 2, _ix + (_iw - len(hint)) // 2, hint, colors["hint"])
+        stdscr.refresh()
+
     line("Detecting system configuration...")
-    my += 1
+    blank()
 
     arch   = _detect_arch()
     ubuntu = _detect_ubuntu()
@@ -534,7 +586,7 @@ def _detect_and_confirm(stdscr, colors, uuid):
         stdscr.getch()
         return None
 
-    my += 1
+    blank()
     line("Contacting download server...")
     try:
         product, valid_until = _uuid_info(uuid)
@@ -546,7 +598,7 @@ def _detect_and_confirm(stdscr, colors, uuid):
         return None
 
     line(f"  Product : {product}    Valid until : {valid_until}", colors["dim"])
-    my += 1
+    blank()
     line("Fetching and filtering package list...")
 
     try:
@@ -577,27 +629,27 @@ def _detect_and_confirm(stdscr, colors, uuid):
     hh_pkg = hh_pkgs[0]
     nv_pkg = nv_pkgs[0]
 
-    my += 1
+    blank()
     line("The following will be downloaded and installed:", colors["bold"])
-    my += 1
+    blank()
     line(f"  {hh_pkg['filename']}")
     line(f"  {nv_pkg['filename']}")
     line(f"  {DATASET_ZIP}  (sample dataset)")
 
     # Confirmation bar at bottom
-    sep_y  = rows - 3
-    hint_y = rows - 2
-    if sep_y > my:
-        _hline(stdscr, sep_y, bx, bw)
-    hint = "  Enter  Download & Install    q  Cancel  "
-    _put(stdscr, hint_y, bx + (bw - len(hint)) // 2, hint, colors["hint"])
+    rows, cols = stdscr.getmaxyx()
+    if rows - 3 > my:
+        _hline(stdscr, rows - 3, 0, sep_w)
+    _put(stdscr, rows - 2, ix + (iw - len(hint)) // 2, hint, colors["hint"])
     stdscr.refresh()
 
     while True:
         key = stdscr.getch()
-        if key in (curses.KEY_ENTER, ord("\n"), ord("\r")):
+        if key == curses.KEY_RESIZE:
+            _redraw_confirm()
+        elif key in (curses.KEY_ENTER, ord("\n"), ord("\r")):
             return [hh_pkg, nv_pkg]
-        if key in (ord("q"), 27):
+        elif key in (ord("q"), 27):
             return None
 
 # ── Installer: download + install ─────────────────────────────────────────────
@@ -650,31 +702,31 @@ def _download_and_install(stdscr, colors, uuid, packages):
     def _redraw(status_line="  Downloading — please wait..."):
         rows, cols = stdscr.getmaxyx()
         stdscr.erase()
-        bx, bw, inner_w, sep_row = _draw_header(
+        iy, ix, ih, iw, sep_x, sep_w = _draw_frame(
             stdscr, colors, "Nodar Launcher  ·  Downloading"
         )
-        bar_w = inner_w - 28
-        my    = sep_row + 2
+        bar_w = iw - 31  # 3 indent + 1 "[" + 1 "]" + 2 "  " + 24 max info
+        my    = iy + 1
 
         for it in items:
-            _put(stdscr, my, bx + 4, it["label"][:inner_w - 4], colors["bold"])
+            _put(stdscr, my, ix + 3, it["label"], colors["bold"], iw - 4)
             my += 1
             if it["state"] == "waiting":
                 bar = "░" * bar_w
-                _put(stdscr, my, bx + 4, f"[{bar}]  waiting...", colors["dim"])
+                _put(stdscr, my, ix + 3, f"[{bar}]  waiting...", colors["dim"])
             elif it["state"] in ("done", "skipped"):
                 bar  = "█" * bar_w
                 note = "done" if it["state"] == "done" else "already downloaded"
-                _put(stdscr, my, bx + 4, f"[{bar}]  {note}", colors["desc"])
+                _put(stdscr, my, ix + 3, f"[{bar}]  {note}", colors["desc"])
             elif it["state"] == "downloading":
                 pct  = it["done"] / it["total"] if it["total"] else 0
                 fill = int(bar_w * pct)
                 bar  = "█" * fill + "░" * (bar_w - fill)
                 info = f"{pct * 100:3.0f}%  {it['done'] / 1_048_576:.1f} / {it['total'] / 1_048_576:.1f} MB"
-                _put(stdscr, my, bx + 4, f"[{bar}]  {info}", colors["normal"])
+                _put(stdscr, my, ix + 3, f"[{bar}]  {info}", colors["normal"])
             my += 2
 
-        _put(stdscr, rows - 2, bx + 4, status_line, colors["hint"])
+        _put(stdscr, rows - 2, ix + 3, status_line, colors["hint"])
         stdscr.refresh()
 
     _redraw()
@@ -697,14 +749,13 @@ def _download_and_install(stdscr, colors, uuid, packages):
             it["state"] = "done"
             _redraw()
         except Exception as e:
-            rows, cols = stdscr.getmaxyx()
             stdscr.erase()
-            bx, bw, inner_w, sep_row = _draw_header(
+            iy, ix, ih, iw, sep_x, sep_w = _draw_frame(
                 stdscr, colors, "Nodar Launcher  ·  Download Error"
             )
-            _put(stdscr, sep_row + 2, bx + 4,
-                 f"Download failed: {e}"[:inner_w - 4], colors["err"])
-            _put(stdscr, sep_row + 4, bx + 4, "Press any key to exit.", colors["hint"])
+            _put(stdscr, iy + 1, ix + 3,
+                 f"Download failed: {e}"[:iw - 4], colors["err"])
+            _put(stdscr, iy + 3, ix + 3, "Press any key to exit.", colors["hint"])
             stdscr.refresh()
             stdscr.getch()
             return False
@@ -719,14 +770,13 @@ def _download_and_install(stdscr, colors, uuid, packages):
             with zipfile.ZipFile(zip_path) as z:
                 z.extractall(datasets_dir)
         except Exception as e:
-            rows, cols = stdscr.getmaxyx()
             stdscr.erase()
-            bx, bw, inner_w, sep_row = _draw_header(
+            iy, ix, ih, iw, sep_x, sep_w = _draw_frame(
                 stdscr, colors, "Nodar Launcher  ·  Error"
             )
-            _put(stdscr, sep_row + 2, bx + 4,
-                 f"Unzip failed: {e}"[:inner_w - 4], colors["err"])
-            _put(stdscr, sep_row + 4, bx + 4, "Press any key to exit.", colors["hint"])
+            _put(stdscr, iy + 1, ix + 3,
+                 f"Unzip failed: {e}"[:iw - 4], colors["err"])
+            _put(stdscr, iy + 3, ix + 3, "Press any key to exit.", colors["hint"])
             stdscr.refresh()
             stdscr.getch()
             return False
@@ -742,25 +792,32 @@ def _download_and_install(stdscr, colors, uuid, packages):
             shutil.copy2(src, dest)
 
     # Prompt before leaving curses for apt
-    rows, cols = stdscr.getmaxyx()
-    stdscr.erase()
-    bx, bw, inner_w, sep_row = _draw_header(
-        stdscr, colors, "Nodar Launcher  ·  Installing"
-    )
-    _put(stdscr, sep_row + 2, bx + 4,
-         "Downloads complete. Ready to install packages with apt.", colors["bold"])
-    _put(stdscr, sep_row + 4, bx + 4,
-         "The terminal will switch to normal mode — sudo may prompt for your password.",
-         colors["normal"])
-    _put(stdscr, sep_row + 6, bx + 4,
-         "Press Enter to proceed, or q to cancel.", colors["hint"])
-    stdscr.refresh()
+    def _draw_install_prompt():
+        stdscr.erase()
+        _iy, _ix, _ih, _iw, _sx, _sw = _draw_frame(
+            stdscr, colors, "Nodar Launcher  ·  Installing"
+        )
+        _iy += 1  # blank line
+        _iy = _put(stdscr, _iy, _ix + 3,
+                   "Downloads complete. Ready to install packages with apt.", colors["bold"])
+        _iy += 1  # blank line
+        _iy = _put(stdscr, _iy, _ix + 3,
+                   "The terminal will switch to normal mode — sudo may prompt for your password.",
+                   colors["normal"], _iw - 3, wrap=True)
+        _iy += 1  # blank line
+        _put(stdscr, _iy, _ix + 3,
+             "Press Enter to proceed, or q to cancel.", colors["hint"])
+        stdscr.refresh()
+
+    _draw_install_prompt()
 
     while True:
         key = stdscr.getch()
-        if key in (curses.KEY_ENTER, ord("\n"), ord("\r")):
+        if key == curses.KEY_RESIZE:
+            _draw_install_prompt()
+        elif key in (curses.KEY_ENTER, ord("\n"), ord("\r")):
             break
-        if key in (ord("q"), 27):
+        elif key in (ord("q"), 27):
             return False
 
     hh_deb = items[0]["dest"]
@@ -900,7 +957,6 @@ def _launcher_menu(stdscr, colors, cfg):
     selected = 0
     status   = ""
     overlay  = None
-    logo_max_w = max(len(l) for l in LOGO)
 
     while True:
         rows, cols = stdscr.getmaxyx()
@@ -915,28 +971,11 @@ def _launcher_menu(stdscr, colors, cfg):
                 sys.exit(0)
             continue
 
-        bx      = 0
-        bw      = cols
-        bh      = rows
-        inner_w = bw - 2
+        iy, ix, ih, iw, sep_x, sep_w = _draw_frame(stdscr, colors, f"Nodar Launcher  ·  v{cfg['version']}")
 
-        _box(stdscr, 0, bx, bh, bw)
-
-        logo_x      = bx + 1 + (inner_w - logo_max_w) // 2
-        logo_bottom = 1 + len(LOGO)
-        for i, line in enumerate(LOGO):
-            _put(stdscr, 1 + i, logo_x, line, colors["art"], inner_w)
-
-        subtitle_row = logo_bottom + 1
-        subtitle     = f"Nodar  Launcher  ·  v{cfg['version']}"
-        _put(stdscr, subtitle_row,
-             bx + 1 + (inner_w - len(subtitle)) // 2, subtitle, colors["hint"])
-
-        sep_row = subtitle_row + 1
-        _hline(stdscr, sep_row, bx, bw)
-
-        menu_inner = bw - 4
-        my = sep_row + 1
+        my = iy  # The y of menu area start
+        menu_buf = 1
+        menu_inner = iw - 2 * menu_buf
 
         for idx, item in enumerate(menu):
             is_sel = (idx == selected)
@@ -948,45 +987,46 @@ def _launcher_menu(stdscr, colors, cfg):
             else:
                 title_s = (tag + item.title).ljust(menu_inner)
 
-            desc_s = "       " + item.description
+            desc_s = " " * (len(tag) + 1) + item.description
 
             if is_sel:
-                _put(stdscr, my,     bx + 2, title_s[:menu_inner], colors["sel"])
-                _put(stdscr, my + 1, bx + 2, desc_s[:menu_inner],  colors["desc"])
+                my = _put(stdscr, my, ix + menu_buf, title_s, colors["sel"], menu_inner)
+                my = _put(stdscr, my, ix + menu_buf, desc_s,  colors["desc"], menu_inner)
             else:
-                _put(stdscr, my,     bx + 2, title_s[:menu_inner], colors["normal"])
-                _put(stdscr, my + 1, bx + 2, desc_s[:menu_inner],  colors["dim"])
+                my = _put(stdscr, my, ix + menu_buf, title_s, colors["normal"], menu_inner)
+                my = _put(stdscr, my, ix + menu_buf, desc_s,  colors["dim"], menu_inner)
+            my += 1  # blank line
 
-            my += 3 if idx < len(menu) - 1 else 2
-
-        hint_sep = bh - 3
-        if hint_sep > my:
-            _hline(stdscr, hint_sep, bx, bw)
+        # Draw the navigation hint
+        hint_sep = rows - 3
+        if hint_sep >= my:
+            _hline(stdscr, hint_sep, 0, sep_w)
+            hint_buf = 2
+            hint_width = iw - 2 * hint_buf
             if status:
-                _put(stdscr, hint_sep + 1, bx + 3, status[:bw - 6], colors["status"])
+                _put(stdscr, hint_sep + 1, ix + hint_buf, status, colors["status"], hint_width)
             else:
                 if selected == TOGGLE_ITEM_IDX:
                     hint = "  ↑↓  Navigate    Enter  Launch    ◄►  Switch App    q  Quit  "
                 else:
                     hint = "  ↑↓  Navigate    Enter / 1–4  Select    q  Quit  "
-                _put(stdscr, hint_sep + 1,
-                     bx + (bw - len(hint)) // 2, hint, colors["hint"])
+                _put(stdscr, hint_sep + 1, ix + (iw - len(hint)) // 2, hint, colors["hint"])
 
         if overlay is not None:
             content_w = max((len(l) for l in overlay), default=0)
-            box_w     = min(content_w + 6, bw - 4)
+            box_w     = min(content_w + 6, cols - 4)
             box_h     = len(overlay) + 4
-            oy        = max(0, (bh - box_h) // 2)
-            ox        = bx + (bw - box_w) // 2
-            _box(stdscr, oy, ox, box_h, box_w)
-            blank = " " * (box_w - 2)
-            for row in range(1, box_h - 1):
-                _put(stdscr, oy + row, ox + 1, blank, colors["normal"])
+            oy        = max(0, (rows - box_h) // 2)
+            ox        = (cols - box_w) // 2
+            oiy, oix, oih, oiw = _box(stdscr, oy, ox, box_h, box_w)
+            blank = " " * oiw
+            for row in range(oih):
+                _put(stdscr, oiy + row, oix, blank, colors["normal"])
             for i, line in enumerate(overlay):
-                _put(stdscr, oy + 1 + i, ox + 3, line, colors["normal"], box_w - 6)
-            _hline(stdscr, oy + 1 + len(overlay), ox, box_w)
+                _put(stdscr, oiy + i, oix + 2, line, colors["normal"], oiw - 4)
+            _hline(stdscr, oiy + len(overlay), ox, box_w)
             hint_ov = "  Space / Enter to close  "
-            _put(stdscr, oy + 2 + len(overlay),
+            _put(stdscr, oiy + 1 + len(overlay),
                  ox + (box_w - len(hint_ov)) // 2, hint_ov, colors["hint"])
 
         stdscr.refresh()
