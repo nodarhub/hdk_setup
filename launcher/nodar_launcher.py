@@ -465,8 +465,8 @@ def _wait_size_ok(stdscr):
             break
         stdscr.erase()
         msg = (f"  Terminal too small — need {MIN_W}×{MIN_ROWS},"
-               f" currently {cols}×{rows}.  Resize to continue.")
-        _put(stdscr, rows // 2, max(0, (cols - len(msg)) // 2), msg[:cols], curses.A_BOLD)
+               f" currently {cols}×{rows}.  Resize to continue or ctrl+c to abort.")
+        _put(stdscr, rows // 2, max(0, (cols - len(msg)) // 2), msg, curses.A_BOLD, cols, wrap=True)
         stdscr.refresh()
         stdscr.getch()
 
@@ -1044,9 +1044,9 @@ def _build_menu(cfg):
         MenuItem("Launch",
                  "Selected app  ·  ◄ ► to switch", launch),
         MenuItem("Open Config Folder",
-                 f"Browse config files (master, intrinsics, extrinsics)  ({os.path.dirname(cfg['master_config'])})", omc),
+                 f"Browse config files  ({os.path.dirname(cfg['master_config'])})", omc),
         MenuItem("Show Version Info",
-                 "Display the full output of  hammerhead --version", svi),
+                 "Display the full output of `hammerhead --version`", svi),
         MenuItem("Exit", "Quit this launcher", lambda: sys.exit(0)),
     ]
 
@@ -1110,7 +1110,7 @@ def _launcher_menu(stdscr, colors, cfg, act_key=None):
                 _put(stdscr, hint_sep + 1, ix + hint_buf, status, colors["status"], hint_width)
             else:
                 if selected == TOGGLE_ITEM_IDX:
-                    hint = "  ↑↓  Navigate    Enter  Launch    ◄►  Switch App    q  Quit  "
+                    hint = "  ↑↓  Navigate    Enter  Launch    ◄ ►  Switch App    q  Quit  "
                 else:
                     hint = "  ↑↓  Navigate    Enter / 1–4  Select    q  Quit  "
                 _put(stdscr, hint_sep + 1, ix + (iw - len(hint)) // 2, hint, colors["hint"])
