@@ -58,7 +58,7 @@ UUID_RE = re.compile(
 # ── Layout ────────────────────────────────────────────────────────────────────
 
 MIN_W    = 80
-MIN_ROWS = 20
+MIN_ROWS = 24   # download screen: 6 items × 3 rows from iy=4, status at rows-2
 MIN_ROWS_DISPLAYING_LOGO = 26
 
 # ── ASCII art ─────────────────────────────────────────────────────────────────
@@ -441,9 +441,18 @@ def _draw_frame(stdscr, colors, subtitle):
     return iy, ix, ih, iw, 0, cols
 
 
-def _size_ok(stdscr):
-    rows, cols = stdscr.getmaxyx()
-    return cols >= MIN_W and rows >= MIN_ROWS
+def _wait_size_ok(stdscr):
+    """Block until the terminal meets MIN_W×MIN_ROWS; any key re-checks."""
+    while True:
+        rows, cols = stdscr.getmaxyx()
+        if cols >= MIN_W and rows >= MIN_ROWS:
+            break
+        stdscr.erase()
+        msg = (f"  Terminal too small — need {MIN_W}×{MIN_ROWS},"
+               f" currently {cols}×{rows}.  Resize to continue.")
+        _put(stdscr, rows // 2, max(0, (cols - len(msg)) // 2), msg[:cols], curses.A_BOLD)
+        stdscr.refresh()
+        stdscr.getch()
 
 # ── UUID input screen ─────────────────────────────────────────────────────────
 
@@ -454,15 +463,9 @@ def _uuid_screen(stdscr, colors):
     curses.curs_set(1)
 
     while True:
+        _wait_size_ok(stdscr)
         rows, cols = stdscr.getmaxyx()
         stdscr.erase()
-
-        if not _size_ok(stdscr):
-            msg = f"  Terminal too small — need {MIN_W}×{MIN_ROWS}, currently {cols}×{rows}."
-            _put(stdscr, rows // 2, max(0, (cols - len(msg)) // 2), msg[:cols], curses.A_BOLD)
-            stdscr.refresh()
-            stdscr.getch()
-            continue
 
         iy, ix, ih, iw, sep_x, sep_w = _draw_frame(
             stdscr, colors, "Nodar Launcher  ·  First-time Setup"
@@ -646,6 +649,7 @@ def _detect_and_confirm(stdscr, colors, uuid):
     while True:
         key = stdscr.getch()
         if key == curses.KEY_RESIZE:
+            _wait_size_ok(stdscr)
             _redraw_confirm()
         elif key in (curses.KEY_ENTER, ord("\n"), ord("\r")):
             return [hh_pkg, nv_pkg]
@@ -814,6 +818,7 @@ def _download_and_install(stdscr, colors, uuid, packages):
     while True:
         key = stdscr.getch()
         if key == curses.KEY_RESIZE:
+            _wait_size_ok(stdscr)
             _draw_install_prompt()
         elif key in (curses.KEY_ENTER, ord("\n"), ord("\r")):
             break
@@ -959,17 +964,9 @@ def _launcher_menu(stdscr, colors, cfg):
     overlay  = None
 
     while True:
+        _wait_size_ok(stdscr)
         rows, cols = stdscr.getmaxyx()
         stdscr.erase()
-
-        if cols < MIN_W or rows < MIN_ROWS:
-            msg = (f"  Terminal too small — need {MIN_W}×{MIN_ROWS},"
-                   f" currently {cols}×{rows}.  Resize and press any key.")
-            _put(stdscr, rows // 2, max(0, (cols - len(msg)) // 2), msg[:cols], curses.A_BOLD)
-            stdscr.refresh()
-            if stdscr.getch() in (ord("q"), 27):
-                sys.exit(0)
-            continue
 
         iy, ix, ih, iw, sep_x, sep_w = _draw_frame(stdscr, colors, f"Nodar Launcher  ·  v{cfg['version']}")
 
