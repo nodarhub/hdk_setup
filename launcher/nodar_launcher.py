@@ -615,18 +615,23 @@ def _setup_screen(stdscr, colors, need_uuid, need_key, pre_uuid=None):
                     key_buf.append(c)
                     error = ""
 
-# ── Installer: detect system + confirm ───────────────────────────────────────
+# ── Fetch packages and confirm ────────────────────────────────────────────────
 
-def _detect_and_confirm(stdscr, colors, uuid):
-    """Detect system, fetch package list, show confirmation.
+def _fetch_and_confirm(stdscr, colors, uuid,
+                       subtitle="Nodar Launcher  ·  Installation",
+                       installed_version=None):
+    """Detect system, fetch matching packages, and confirm the operation.
 
-    Returns list of two package dicts [hh, nv], or None if user cancelled.
+    When installed_version is provided the fetched version is compared first:
+      - already up to date → shows a message and returns "up_to_date"
+      - newer available    → shows installed → available delta, then confirms
+
+    Returns [hh_pkg, nv_pkg] on confirmation, "up_to_date" when no update is
+    needed, or None on cancellation / error.
     """
     rows, cols = stdscr.getmaxyx()
     stdscr.erase()
-    iy, ix, ih, iw, sep_x, sep_w = _draw_frame(
-        stdscr, colors, "Nodar Launcher  ·  Installation"
-    )
+    iy, ix, ih, iw, sep_x, sep_w = _draw_frame(stdscr, colors, subtitle)
     my = iy + 1
 
     content_lines = []  # replay buffer for resize: (text, color) or None for blank
@@ -644,14 +649,10 @@ def _detect_and_confirm(stdscr, colors, uuid):
         content_lines.append(None)
         my += 1
 
-    hint = "  Enter  Download & Install    q  Cancel  "
-
-    def _redraw_confirm():
+    def _redraw(hint):
         _rows, _cols = stdscr.getmaxyx()
         stdscr.erase()
-        _iy, _ix, _ih, _iw, _sx, _sw = _draw_frame(
-            stdscr, colors, "Nodar Launcher  ·  Installation"
-        )
+        _iy, _ix, _ih, _iw, _sx, _sw = _draw_frame(stdscr, colors, subtitle)
         _my = _iy + 1
         for entry in content_lines:
             if entry is None:
@@ -729,13 +730,60 @@ def _detect_and_confirm(stdscr, colors, uuid):
     nv_pkg = nv_pkgs[0]
 
     blank()
-    line("The following will be downloaded and installed:", colors["bold"])
+
+    # ── Version comparison (update flow only) ──────────────────────────────────
+    is_update = installed_version is not None
+    if is_update:
+        available = hh_pkg.get("version", "")
+
+        def _parse_ver(v):
+            try:
+                return [int(x) for x in v.split(".")]
+            except (ValueError, AttributeError):
+                return []
+
+        av = _parse_ver(available)
+        iv = _parse_ver(installed_version)
+
+        HINT_CLOSE = "  Press any key to return  "
+
+        if av and iv and av <= iv:
+            line("Hammerhead is already up to date.", colors["bold"])
+            blank()
+            line(f"  Installed : {installed_version}", colors["dim"])
+            line(f"  Available : {available}", colors["dim"])
+            rows, cols = stdscr.getmaxyx()
+            if rows - 3 > my:
+                _hline(stdscr, rows - 3, 0, sep_w)
+            _put(stdscr, rows - 2, ix + (iw - len(HINT_CLOSE)) // 2,
+                 HINT_CLOSE, colors["hint"])
+            stdscr.refresh()
+            while True:
+                k = stdscr.getch()
+                if k == curses.KEY_RESIZE:
+                    _wait_size_ok(stdscr)
+                    _redraw(HINT_CLOSE)
+                else:
+                    break
+            return "up_to_date"
+
+        line("A newer version is available!", colors["bold"])
+        blank()
+        line(f"  Installed : {installed_version or 'unknown'}", colors["dim"])
+        line(f"  Available : {available}", colors["dim"])
+        blank()
+
+    # ── Confirmation ───────────────────────────────────────────────────────────
+    hint_action = "Update" if is_update else "Install"
+    hint = f"  Enter  Download & {hint_action}    q  Cancel  "
+
+    line(f"The following will be downloaded and {hint_action.lower()}ed:", colors["bold"])
     blank()
     line(f"  {hh_pkg['filename']}")
     line(f"  {nv_pkg['filename']}")
-    line(f"  {DATASET_ZIP}  (sample dataset)")
+    if not is_update:
+        line(f"  {DATASET_ZIP}  (sample dataset)")
 
-    # Confirmation bar at bottom
     rows, cols = stdscr.getmaxyx()
     if rows - 3 > my:
         _hline(stdscr, rows - 3, 0, sep_w)
@@ -746,7 +794,7 @@ def _detect_and_confirm(stdscr, colors, uuid):
         key = stdscr.getch()
         if key == curses.KEY_RESIZE:
             _wait_size_ok(stdscr)
-            _redraw_confirm()
+            _redraw(hint)
         elif key in (curses.KEY_ENTER, ord("\n"), ord("\r")):
             return [hh_pkg, nv_pkg]
         elif key in (ord("q"), 27):
@@ -949,6 +997,39 @@ def _download_and_install(stdscr, colors, uuid, packages):
     stdscr.refresh()
     return True
 
+# ── Check for update ─────────────────────────────────────────────────────────
+
+def _check_for_update_screen(stdscr, colors, cfg):
+    """Check for a newer package version and optionally install it.
+
+    Returns ("restart",) if an update was installed (caller should reload cfg),
+    or ("stay", msg) when no update was performed.
+    """
+    _wait_size_ok(stdscr)
+
+    uuid = _load_uuid()
+    if not uuid:
+        result = _setup_screen(stdscr, colors, need_uuid=True, need_key=False)
+        if result is None:
+            return ("stay", "Update check cancelled.")
+        uuid, _ = result
+        if uuid:
+            _save_uuid(uuid)
+        if not uuid:
+            return ("stay", "License ID required to check for updates.")
+
+    result = _fetch_and_confirm(
+        stdscr, colors, uuid,
+        subtitle="Nodar Launcher  ·  Check for Update",
+        installed_version=cfg["version"],
+    )
+    if result == "up_to_date":
+        return ("stay", f"Already up to date  (v{cfg['version']})")
+    if result is None:
+        return ("stay", "Update cancelled.")
+    ok = _download_and_install(stdscr, colors, uuid, result)
+    return ("restart",) if ok else ("stay", "Update failed or was cancelled.")
+
 # ── Launcher actions ──────────────────────────────────────────────────────────
 
 def _open_in_terminal(cmd_list):
@@ -975,7 +1056,7 @@ _single_app_idx  = [2]
 TOGGLE_ITEM_IDX  = 0
 
 
-def _make_actions(cfg):
+def _make_actions(cfg, stdscr, colors):
     def _run_launch():
         idx  = _single_app_idx[0]
         name = _SINGLE_APPS[idx]
@@ -1025,7 +1106,10 @@ def _make_actions(cfg):
             lines = (e.output or "").rstrip().splitlines() or ["Command failed"]
         return ("overlay", lines)
 
-    return _run_launch, _open_config_folder, _show_version_info
+    def _run_check_for_update():
+        return _check_for_update_screen(stdscr, colors, cfg)
+
+    return _run_launch, _open_config_folder, _show_version_info, _run_check_for_update
 
 # ── Menu definition ───────────────────────────────────────────────────────────
 
@@ -1036,8 +1120,8 @@ class MenuItem:
         self.action      = action
 
 
-def _build_menu(cfg):
-    launch, omc, svi = _make_actions(cfg)
+def _build_menu(cfg, stdscr, colors):
+    launch, omc, svi, cfu = _make_actions(cfg, stdscr, colors)
     return [
         MenuItem("Launch",
                  "Selected app  ·  ◄ ► to switch", launch),
@@ -1045,7 +1129,8 @@ def _build_menu(cfg):
                  f"Browse config files  ({os.path.dirname(cfg['master_config'])})", omc),
         MenuItem("Show Version Info",
                  "Display the full output of `hammerhead --version`", svi),
-        MenuItem("Exit", "Quit this launcher", lambda: sys.exit(0)),
+        MenuItem("Check for Update",
+                 "Compare installed version with latest available and update if newer", cfu),
     ]
 
 # ── Launcher menu ─────────────────────────────────────────────────────────────
@@ -1053,7 +1138,7 @@ def _build_menu(cfg):
 def _launcher_menu(stdscr, colors, cfg, act_key=None):
     os.makedirs(os.path.dirname(cfg["master_config"]), exist_ok=True)
 
-    menu     = _build_menu(cfg)
+    menu     = _build_menu(cfg, stdscr, colors)
     selected = 0
     status   = ""
     overlay  = None
@@ -1153,6 +1238,10 @@ def _launcher_menu(stdscr, colors, cfg, act_key=None):
                 status = result[1]
             elif isinstance(result, tuple) and result[0] == "overlay":
                 overlay = result[1]
+            elif isinstance(result, tuple) and result[0] == "restart":
+                cfg    = load_config()
+                menu   = _build_menu(cfg, stdscr, colors)
+                status = f"Updated successfully  ·  now v{cfg['version']}"
         elif key in (ord("q"), 27):
             sys.exit(0)
         else:
@@ -1164,6 +1253,10 @@ def _launcher_menu(stdscr, colors, cfg, act_key=None):
                         status = result[1]
                     elif isinstance(result, tuple) and result[0] == "overlay":
                         overlay = result[1]
+                    elif isinstance(result, tuple) and result[0] == "restart":
+                        cfg    = load_config()
+                        menu   = _build_menu(cfg, stdscr, colors)
+                        status = f"Updated successfully  ·  now v{cfg['version']}"
                     break
 
 # ── Uninstall ─────────────────────────────────────────────────────────────────
@@ -1219,7 +1312,7 @@ def _app(stdscr):
             _save_activation_key(act_key)
 
     if not (hh_ok and nv_ok):
-        packages = _detect_and_confirm(stdscr, colors, uuid)
+        packages = _fetch_and_confirm(stdscr, colors, uuid)
         if packages is None:
             return
 
