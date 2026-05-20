@@ -1166,6 +1166,31 @@ def _launcher_menu(stdscr, colors, cfg, act_key=None):
                         overlay = result[1]
                     break
 
+# ── Uninstall ─────────────────────────────────────────────────────────────────
+
+def _uninstall():
+    """Remove all files and directories created or downloaded by the launcher.
+
+    Preserves nodar_launcher.cfg (may contain user edits) and the script
+    files themselves (nodar_launcher.py, nodar_launcher_run.sh), which are
+    managed by install.sh / uninstall.sh.
+    """
+    targets = [
+        UUID_FILE,
+        ACTIVATION_KEY_FILE,
+        DOWNLOAD_DIR,
+    ] + [os.path.join(NODAR_DIR, "config", f) for f in CONFIG_FILES]
+
+    for path in targets:
+        if os.path.isfile(path):
+            os.remove(path)
+            print(f"  removed  {path}")
+        elif os.path.isdir(path):
+            shutil.rmtree(path)
+            print(f"  removed  {path}/")
+        else:
+            print(f"  skipped  {path}  (not found)")
+
 # ── Top-level dispatcher ──────────────────────────────────────────────────────
 
 def _app(stdscr):
@@ -1206,6 +1231,20 @@ def _app(stdscr):
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser(
+        description="Nodar Launcher — interactive menu for Hammerhead & nodar_viewer."
+    )
+    ap.add_argument(
+        "--uninstall", action="store_true",
+        help="Remove all files created or downloaded by the launcher, then exit.",
+    )
+    args = ap.parse_args()
+
+    if args.uninstall:
+        _uninstall()
+        return
+
     try:
         curses.wrapper(_app)
     except KeyboardInterrupt:
