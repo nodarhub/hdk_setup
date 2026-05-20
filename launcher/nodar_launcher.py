@@ -314,7 +314,6 @@ def load_config():
     parser["commands"] = {
         "hammerhead":    "hammerhead",
         "nodar_viewer":  "nodar_viewer",
-        "records_dir":   "~/Desktop/nodar_recordings",
         "master_config": "~/.config/nodar/config/master_config.ini",
     }
     parser.read([CFG_FILE_LOCAL, CFG_FILE])
@@ -332,7 +331,6 @@ def load_config():
     return {
         "hammerhead":    hcmd,
         "nodar_viewer":  _cmd("nodar_viewer"),
-        "records_dir":   _path("records_dir"),
         "master_config": _path("master_config"),
         "version":       _detect_version(hcmd),
         "cfg_file":      active,
@@ -1053,7 +1051,6 @@ def _build_menu(cfg):
 # ── Launcher menu ─────────────────────────────────────────────────────────────
 
 def _launcher_menu(stdscr, colors, cfg, act_key=None):
-    os.makedirs(cfg["records_dir"], exist_ok=True)
     os.makedirs(os.path.dirname(cfg["master_config"]), exist_ok=True)
 
     menu     = _build_menu(cfg)
