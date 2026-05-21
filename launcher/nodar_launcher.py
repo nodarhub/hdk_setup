@@ -989,6 +989,17 @@ def _download_and_install(stdscr, colors, uuid, packages):
         )
         print()
         print("  Installation complete!")
+        print()
+        print("  Switching defaults to the newly installed versions...")
+        for alt in ("hammerhead", "nodar_viewer"):
+            try:
+                subprocess.run(
+                    ["sudo", "update-alternatives", "--auto", alt],
+                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+                print(f"    update-alternatives --auto {alt}  ✓")
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                print(f"    update-alternatives --auto {alt}  (skipped — not registered)")
     except subprocess.CalledProcessError as e:
         print(f"\n  apt install failed (exit code {e.returncode}).")
         print("  Resolve the errors above, then re-run the launcher.")
