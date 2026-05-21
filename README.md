@@ -1,6 +1,8 @@
-# HDK Setup
+# Setup and Customize your own HDK
 
-Hardware Development Kit setup scripts for configuring Linux-based hardware for real-time camera and network operations.
+The HDK comes with pre-setup software and system configurations. The operating system we use is Linux-based. Although the pre-setup configurations captures most of the use cases, anyone might still want special configurations for their needs (e.g. network setting, background Hammerhead services). We provides some convenient scripts to help you 
+1. customize your HDK and
+2. completely reinstall the HDK.
 
 ## Supported Platforms
 
