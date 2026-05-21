@@ -1095,16 +1095,24 @@ def _make_actions(cfg, stdscr, colors):
             return ("stay", f"xdg-open not available — config folder is at:  {folder}")
 
     def _show_version_info():
-        cmd = cfg["hammerhead"] + ["--version"]
-        try:
-            out   = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True, timeout=5)
-            lines = out.rstrip().splitlines()
-        except FileNotFoundError:
-            lines = [f"Command not found: {cmd[0]}"]
-        except subprocess.TimeoutExpired:
-            lines = ["Timed out waiting for hammerhead --version"]
-        except subprocess.CalledProcessError as e:
-            lines = (e.output or "").rstrip().splitlines() or ["Command failed"]
+        def _query(cmd):
+            try:
+                out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True, timeout=5)
+                return out.rstrip().splitlines()
+            except FileNotFoundError:
+                return [f"Command not found: {cmd[0]}"]
+            except subprocess.TimeoutExpired:
+                return [f"Timed out waiting for {cmd[0]} --version"]
+            except subprocess.CalledProcessError as e:
+                return (e.output or "").rstrip().splitlines() or [f"{cmd[0]} command failed"]
+
+        hh_lines = _query(cfg["hammerhead"]   + ["--version"])
+        nv_lines = _query(cfg["nodar_viewer"] + ["--version"])
+        lines = (
+            ["Hammerhead:"] + [f"  {l}" for l in hh_lines]
+            + [""]
+            + ["Nodar Viewer:"] + [f"  {l}" for l in nv_lines]
+        )
         return ("overlay", lines)
 
     def _run_check_for_update():
