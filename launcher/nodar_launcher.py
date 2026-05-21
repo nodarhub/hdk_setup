@@ -620,12 +620,13 @@ def _setup_screen(stdscr, colors, need_uuid, need_key, pre_uuid=None):
 
 def _fetch_and_confirm(stdscr, colors, uuid,
                        subtitle="Nodar Launcher  ·  Installation",
-                       installed_version=None):
+                       installed_versions=None):
     """Detect system, fetch matching packages, and confirm the operation.
 
-    When installed_version is provided the fetched version is compared first:
-      - already up to date → shows a message and returns "up_to_date"
-      - newer available    → shows installed → available delta, then confirms
+    When installed_versions is provided as (hh_ver, nv_ver), both are compared
+    against the fetched packages:
+      - both up to date → shows a message and returns "up_to_date"
+      - either is newer → shows installed → available table, then confirms
 
     Returns [hh_pkg, nv_pkg] on confirmation, "up_to_date" when no update is
     needed, or None on cancellation / error.
@@ -733,9 +734,11 @@ def _fetch_and_confirm(stdscr, colors, uuid,
     blank()
 
     # ── Version comparison (update flow only) ──────────────────────────────────
-    is_update = installed_version is not None
+    is_update = installed_versions is not None
     if is_update:
-        available = hh_pkg.get("version", "")
+        hh_inst, nv_inst = installed_versions
+        hh_avail = hh_pkg.get("version", "")
+        nv_avail = nv_pkg.get("version", "")
 
         def _parse_ver(v):
             try:
@@ -743,16 +746,18 @@ def _fetch_and_confirm(stdscr, colors, uuid,
             except (ValueError, AttributeError):
                 return []
 
-        av = _parse_ver(available)
-        iv = _parse_ver(installed_version)
+        hh_needs = bool(_parse_ver(hh_avail) and _parse_ver(hh_inst)
+                        and _parse_ver(hh_avail) > _parse_ver(hh_inst))
+        nv_needs = bool(_parse_ver(nv_avail) and _parse_ver(nv_inst)
+                        and _parse_ver(nv_avail) > _parse_ver(nv_inst))
 
         HINT_CLOSE = "  Press any key to return  "
 
-        if av and iv and av <= iv:
-            line("Hammerhead is already up to date.", colors["bold"])
+        if not hh_needs and not nv_needs:
+            line("Both packages are already up to date.", colors["bold"])
             blank()
-            line(f"  Installed : {installed_version}", colors["dim"])
-            line(f"  Available : {available}", colors["dim"])
+            line(f"  {'Hammerhead':<12} : {hh_inst}", colors["dim"])
+            line(f"  {'Nodar Viewer':<12} : {nv_inst}", colors["dim"])
             rows, cols = stdscr.getmaxyx()
             if rows - 3 > my:
                 _hline(stdscr, rows - 3, 0, sep_w)
@@ -770,8 +775,8 @@ def _fetch_and_confirm(stdscr, colors, uuid,
 
         line("A newer version is available!", colors["bold"])
         blank()
-        line(f"  Installed : {installed_version or 'unknown'}", colors["dim"])
-        line(f"  Available : {available}", colors["dim"])
+        line(f"  {'Hammerhead':<12} : {hh_inst or 'unknown'}  →  {hh_avail}", colors["dim"])
+        line(f"  {'Nodar Viewer':<12} : {nv_inst or 'unknown'}  →  {nv_avail}", colors["dim"])
         blank()
 
     # ── Confirmation ───────────────────────────────────────────────────────────
@@ -1019,13 +1024,15 @@ def _check_for_update_screen(stdscr, colors, cfg):
         if not uuid:
             return ("stay", "License ID required to check for updates.")
 
+    hh_installed = cfg["version"]
+    nv_installed = _detect_version(cfg["nodar_viewer"])
     result = _fetch_and_confirm(
         stdscr, colors, uuid,
         subtitle="Nodar Launcher  ·  Check for Update",
-        installed_version=cfg["version"],
+        installed_versions=(hh_installed, nv_installed),
     )
     if result == "up_to_date":
-        return ("stay", f"Already up to date  (v{cfg['version']})")
+        return ("stay", f"Already up to date  (v{hh_installed})")
     if result is None:
         return ("stay", "Update cancelled.")
     ok = _download_and_install(stdscr, colors, uuid, result)
