@@ -637,6 +637,7 @@ def _fetch_and_confirm(stdscr, colors, uuid,
     my = iy + 1
 
     content_lines = []  # replay buffer for resize: (text, color) or None for blank
+    scroll_offset = [0]  # mutable so nested closures can update it
 
     def line(text, color=None):
         nonlocal my
@@ -655,17 +656,37 @@ def _fetch_and_confirm(stdscr, colors, uuid,
         _rows, _cols = stdscr.getmaxyx()
         stdscr.erase()
         _iy, _ix, _ih, _iw, _sx, _sw = _draw_frame(stdscr, colors, subtitle)
+        # Rows available for content: between iy+1 and the separator at rows-3.
+        avail = max(0, _rows - _iy - 4)
+        total = len(content_lines)
+        max_s = max(0, total - avail)
+        if scroll_offset[0] > max_s:
+            scroll_offset[0] = max_s
+
         _my = _iy + 1
-        for entry in content_lines:
+        for entry in content_lines[scroll_offset[0]:scroll_offset[0] + avail]:
             if entry is None:
                 _my += 1
             else:
                 _put(stdscr, _my, _ix + 3, entry[0], entry[1], _iw - 4)
                 _my += 1
-        if _rows - 3 > _my:
-            _hline(stdscr, _rows - 3, 0, _sw)
+
+        # Scroll indicators at the right edge of the content area.
+        if scroll_offset[0] > 0:
+            _put(stdscr, _iy + 1, _ix + _iw - 2, "▲", colors["hint"])
+        if scroll_offset[0] < max_s:
+            _put(stdscr, _iy + avail, _ix + _iw - 2, "▼", colors["hint"])
+
+        _hline(stdscr, _rows - 3, 0, _sw)
         _put(stdscr, _rows - 2, _ix + (_iw - len(hint)) // 2, hint, colors["hint"])
         stdscr.refresh()
+
+    def _scroll_to_bottom():
+        """Set scroll_offset so the last content line is visible before redrawing."""
+        _r, _ = stdscr.getmaxyx()
+        _iy_s = 11 if _r >= MIN_ROWS_DISPLAYING_LOGO else 5
+        _avail_s = max(0, _r - _iy_s - 4)
+        scroll_offset[0] = max(0, len(content_lines) - _avail_s)
 
     line("Detecting system configuration...")
     blank()
@@ -751,23 +772,27 @@ def _fetch_and_confirm(stdscr, colors, uuid,
         nv_needs = bool(_parse_ver(nv_avail) and _parse_ver(nv_inst)
                         and _parse_ver(nv_avail) > _parse_ver(nv_inst))
 
-        HINT_CLOSE = "  Press any key to return  "
+        HINT_CLOSE = "  ↑↓  Scroll    Any key  Return  "
 
         if not hh_needs and not nv_needs:
             line("Both packages are already up to date.", colors["bold"])
             blank()
             line(f"  {'Hammerhead':<12} : {hh_inst}", colors["dim"])
             line(f"  {'Nodar Viewer':<12} : {nv_inst}", colors["dim"])
-            rows, cols = stdscr.getmaxyx()
-            if rows - 3 > my:
-                _hline(stdscr, rows - 3, 0, sep_w)
-            _put(stdscr, rows - 2, ix + (iw - len(HINT_CLOSE)) // 2,
-                 HINT_CLOSE, colors["hint"])
-            stdscr.refresh()
+            _scroll_to_bottom()
+            _redraw(HINT_CLOSE)
             while True:
                 k = stdscr.getch()
                 if k == curses.KEY_RESIZE:
                     _wait_size_ok(stdscr)
+                    scroll_offset[0] = 0
+                    _redraw(HINT_CLOSE)
+                elif k == curses.KEY_UP:
+                    if scroll_offset[0] > 0:
+                        scroll_offset[0] -= 1
+                        _redraw(HINT_CLOSE)
+                elif k == curses.KEY_DOWN:
+                    scroll_offset[0] += 1
                     _redraw(HINT_CLOSE)
                 else:
                     break
@@ -781,7 +806,7 @@ def _fetch_and_confirm(stdscr, colors, uuid,
 
     # ── Confirmation ───────────────────────────────────────────────────────────
     hint_action = "Update" if is_update else "Install"
-    hint = f"  Enter  Download & {hint_action}    q  Cancel  "
+    hint = f"  ↑↓  Scroll    Enter  Download & {hint_action}    q  Cancel  "
 
     line(f"The following will be downloaded and {hint_action.lower()}ed:", colors["bold"])
     blank()
@@ -790,16 +815,21 @@ def _fetch_and_confirm(stdscr, colors, uuid,
     if not is_update:
         line(f"  {DATASET_ZIP}  (sample dataset)")
 
-    rows, cols = stdscr.getmaxyx()
-    if rows - 3 > my:
-        _hline(stdscr, rows - 3, 0, sep_w)
-    _put(stdscr, rows - 2, ix + (iw - len(hint)) // 2, hint, colors["hint"])
-    stdscr.refresh()
+    _scroll_to_bottom()
+    _redraw(hint)
 
     while True:
         key = stdscr.getch()
         if key == curses.KEY_RESIZE:
             _wait_size_ok(stdscr)
+            scroll_offset[0] = 0
+            _redraw(hint)
+        elif key == curses.KEY_UP:
+            if scroll_offset[0] > 0:
+                scroll_offset[0] -= 1
+                _redraw(hint)
+        elif key == curses.KEY_DOWN:
+            scroll_offset[0] += 1
             _redraw(hint)
         elif key in (curses.KEY_ENTER, ord("\n"), ord("\r")):
             return [hh_pkg, nv_pkg]
