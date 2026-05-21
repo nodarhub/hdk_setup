@@ -196,7 +196,7 @@ def _uuid_info(uuid):
     if status in (301, 302, 303, 307, 308):
         pass  # location captured above
     elif status == 403:
-        raise RuntimeError("UUID not recognised or licence expired.")
+        raise RuntimeError("License ID not recognised or license expired.")
     elif status == 200:
         raise RuntimeError(
             "Unexpected 200 response — the server did not redirect to a product URL."
@@ -514,7 +514,7 @@ def _setup_screen(stdscr, colors, need_uuid, need_key, pre_uuid=None):
         if need_uuid and need_key:
             desc = "Please enter your License ID and activation key (from the email you received)."
         elif need_uuid:
-            desc = "Hammerhead and Nodar Viewer are not yet installed. Please enter your License ID."
+            desc = "Please enter your License ID."
         else:
             desc = "Please enter your activation key (from the email you received)."
 
