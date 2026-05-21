@@ -32,6 +32,12 @@ hdk_setup/
 ├── hammerhead/          # Hammerhead autostart service
 │   ├── install.sh
 │   └── uninstall.sh
+├── launcher/            # Nodar Launcher TUI
+│   ├── nodar_launcher.py      # Main launcher application
+│   ├── nodar_launcher_run.sh  # Wrapper script to launch the TUI
+│   ├── nodar_launcher.cfg     # Command configuration (editable)
+│   ├── install.sh             # Installs launcher files to ~/.config/nodar/
+│   └── uninstall.sh           # Removes launcher files and generated data
 ├── mtu/                 # MTU (jumbo frames) configuration
 │   ├── install.sh
 │   └── uninstall.sh
@@ -237,6 +243,37 @@ sudo systemctl restart hammerhead
 # Follow logs in real time
 sudo journalctl -u hammerhead -f
 ```
+
+### Launcher
+
+An interactive terminal UI for managing Hammerhead and nodar_viewer on the device.
+
+**First-time setup:** On first launch, the launcher prompts for a License ID (UUID) and optionally an activation key. Both are saved to `~/.config/nodar/` and reused on subsequent launches.
+
+**Day-to-day use:**
+
+- **Launch** — start Hammerhead with or without nodar_viewer; switch between modes with the arrow keys
+- **Open Config Folder** — open the config directory in the system file manager
+- **Show Version Info** — display full `--version` output for both Hammerhead and nodar_viewer
+- **Check for Update** — compare installed versions against the latest available, and download/install updates if newer
+
+**Installation:**
+
+```bash
+cd hdk_setup/nodarhub/launcher
+./install.sh
+```
+
+Files are installed to `~/.config/nodar/`. The configuration file (`nodar_launcher.cfg`) is preserved on reinstall so user edits are not overwritten.
+
+**Uninstallation:**
+
+```bash
+cd hdk_setup/nodarhub/launcher
+./uninstall.sh
+```
+
+Removes downloaded packages, the License ID file, activation key file, and installed config copies. The config file is preserved by default.
 
 ## Requirements
 
