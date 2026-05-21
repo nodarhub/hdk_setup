@@ -36,6 +36,7 @@ HERE           = os.path.dirname(os.path.abspath(__file__))
 NODAR_DIR             = os.path.expanduser("~/.config/nodar")
 UUID_FILE             = os.path.join(NODAR_DIR, "uuid")
 ACTIVATION_KEY_FILE   = os.path.join(NODAR_DIR, "activation_key")
+LICENSE_ENC_FILE      = os.path.join(NODAR_DIR, "license.enc")
 DOWNLOAD_DIR   = os.path.join(NODAR_DIR, "downloads")
 CFG_FILE       = os.path.join(NODAR_DIR, "nodar_launcher.cfg")
 CFG_FILE_LOCAL = os.path.join(HERE, "nodar_launcher.cfg")
@@ -1175,7 +1176,7 @@ def _launcher_menu(stdscr, colors, cfg, act_key=None):
             my += 1  # blank line
 
         # Activation key display (two rows above the hint separator)
-        if act_key and rows - 5 >= my:
+        if act_key and not os.path.isfile(LICENSE_ENC_FILE) and rows - 5 >= my:
             instr = "Copy and paste this key to Hammerhead when prompted at the first run."
             _put(stdscr, rows - 5, ix + (iw - len(instr)) // 2, instr,
                  colors["hint"], iw)
@@ -1297,7 +1298,7 @@ def _app(stdscr):
 
     # UUID is considered provided when both packages are already installed.
     need_uuid = (uuid is None) and not (hh_ok and nv_ok)
-    need_key  = (act_key is None)
+    need_key  = (act_key is None) and not os.path.isfile(LICENSE_ENC_FILE)
 
     if need_uuid or need_key:
         result = _setup_screen(stdscr, colors, need_uuid, need_key, pre_uuid=uuid)
