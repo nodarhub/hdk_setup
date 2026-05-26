@@ -1185,7 +1185,7 @@ def _build_menu(cfg, stdscr, colors):
         MenuItem("Open Config Folder",
                  f"Browse config files  ({cfg['config_path']})", omc),
         MenuItem("Show Version Info",
-                 "Display the full output of `hammerhead --version`", svi),
+                 "Display the full output of `hammerhead --version` and `nodar_viewer --version`", svi),
         MenuItem("Check for Update",
                  "Compare installed version with latest available and update if newer", cfu),
     ]
