@@ -315,7 +315,7 @@ def load_config():
     parser["commands"] = {
         "hammerhead":    "hammerhead",
         "nodar_viewer":  "nodar_viewer",
-        "master_config": "~/.config/nodar/config/master_config.ini",
+        "config_path": "~/.config/nodar/config/",
     }
     parser.read([CFG_FILE_LOCAL, CFG_FILE])
 
@@ -332,7 +332,7 @@ def load_config():
     return {
         "hammerhead":    hcmd,
         "nodar_viewer":  _cmd("nodar_viewer"),
-        "master_config": _path("master_config"),
+        "config_path":   _path("config_path"),
         "version":       _detect_version(hcmd),
         "cfg_file":      active,
     }
@@ -1132,7 +1132,7 @@ def _make_actions(cfg, stdscr, colors):
         return ("stay", "No terminal emulator found — install gnome-terminal or xterm")
 
     def _open_config_folder():
-        folder = os.path.dirname(cfg["master_config"])
+        folder = cfg["config_path"]
         if not os.path.isdir(folder):
             return ("stay", f"Directory not found:  {folder}")
         try:
@@ -1183,7 +1183,7 @@ def _build_menu(cfg, stdscr, colors):
         MenuItem("Launch",
                  "Selected app  ·  ◄ ► to switch", launch),
         MenuItem("Open Config Folder",
-                 f"Browse config files  ({os.path.dirname(cfg['master_config'])})", omc),
+                 f"Browse config files  ({cfg['config_path']})", omc),
         MenuItem("Show Version Info",
                  "Display the full output of `hammerhead --version`", svi),
         MenuItem("Check for Update",
@@ -1193,7 +1193,7 @@ def _build_menu(cfg, stdscr, colors):
 # ── Launcher menu ─────────────────────────────────────────────────────────────
 
 def _launcher_menu(stdscr, colors, cfg, act_key=None):
-    os.makedirs(os.path.dirname(cfg["master_config"]), exist_ok=True)
+    os.makedirs(cfg["config_path"], exist_ok=True)
 
     menu     = _build_menu(cfg, stdscr, colors)
     selected = 0
