@@ -3,16 +3,29 @@
 #
 # Downloads nodar_launcher.py from the Nodar documentation site, installs it
 # together with the run wrapper and default config to ~/.config/nodar/, and
-# creates a desktop icon and autostart entry.
+# creates a desktop icon. Autostart at login is optional (prompted interactively,
+# or controlled via --autostart / --no-autostart flags).
 #
 # Usage (as the target user, or with sudo):
-#   ./install.sh
+#   ./install.sh                   # interactive prompt for autostart
+#   ./install.sh --autostart       # enable autostart without prompting
+#   ./install.sh --no-autostart    # skip autostart without prompting
 
 set -euo pipefail
 
 LAUNCHER_URL="https://docs.nodarsensor.net/launcher/nodar_launcher.py"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
+
+# ── Parse arguments ───────────────────────────────────────────────────────────
+AUTOSTART=""   # empty = ask interactively
+for arg in "$@"; do
+    case "$arg" in
+        --autostart)    AUTOSTART=true  ;;
+        --no-autostart) AUTOSTART=false ;;
+        *) echo "Unknown argument: $arg" >&2; exit 1 ;;
+    esac
+done
 
 SCRIPT_DIR="$(cd -- "$(dirname "$0")" >/dev/null 2>&1; pwd -P)"
 
@@ -95,11 +108,26 @@ if command -v gio &>/dev/null; then
 fi
 log "Desktop icon created: $DESKTOP_FILE"
 
-# ── 7. Autostart entry ────────────────────────────────────────────────────────
-AUTOSTART_FILE="$USER_HOME/.config/autostart/nodar_launcher.desktop"
-sudo -u "$RUN_USER" mkdir -p "$USER_HOME/.config/autostart"
-write_desktop "$AUTOSTART_FILE" true
-log "Autostart entry created: $AUTOSTART_FILE"
+# ── 7. Autostart entry (optional) ────────────────────────────────────────────
+if [ -z "$AUTOSTART" ]; then
+    echo ""
+    read -r -p "Enable Nodar Launcher autostart at login? [y/N] " _ans
+    case "$_ans" in
+        [yY][eE][sS]|[yY]) AUTOSTART=true  ;;
+        *)                  AUTOSTART=false ;;
+    esac
+fi
 
-log "Installation complete. The launcher will start automatically at next login."
+AUTOSTART_FILE="$USER_HOME/.config/autostart/nodar_launcher.desktop"
+if [ "$AUTOSTART" = "true" ]; then
+    sudo -u "$RUN_USER" mkdir -p "$USER_HOME/.config/autostart"
+    write_desktop "$AUTOSTART_FILE" true
+    log "Autostart entry created: $AUTOSTART_FILE"
+    log "Installation complete. The launcher will start automatically at next login."
+    log "To disable autostart: rm $AUTOSTART_FILE"
+else
+    log "Autostart skipped."
+    log "Installation complete."
+fi
+
 log "To uninstall: sudo ./uninstall.sh"
