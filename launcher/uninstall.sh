@@ -20,8 +20,10 @@ RUN_USER="${SUDO_USER:-$USER}"
 USER_HOME="$(eval echo ~"$RUN_USER")"
 
 NODAR_DIR="$USER_HOME/.config/nodar"
+DESKTOP_SRC="$USER_HOME/Desktop/nodar_launcher.desktop"
+AUTOSTART_DST="$USER_HOME/.config/autostart/nodar_launcher.desktop"
 
-# ── Launcher-managed data (uuid, activation key, downloads, configs) ────────
+# ── 1. Launcher-managed data (uuid, activation key, downloads, configs) ────────
 # Prefer the installed copy; fall back to the source-tree copy.
 LAUNCHER_PY="$NODAR_DIR/nodar_launcher.py"
 if [ ! -f "$LAUNCHER_PY" ]; then
@@ -35,7 +37,23 @@ else
     log "Warning: nodar_launcher.py not found; skipping launcher data cleanup."
 fi
 
-# ── Installed script files ──────────────────────────────────────────────────
+# ── 2. Desktop icon ────────────────────────────────────────────────────────────
+if [ -f "$DESKTOP_SRC" ]; then
+    log "Removing desktop icon: $DESKTOP_SRC"
+    rm -f "$DESKTOP_SRC"
+else
+    log "Desktop icon not found: $DESKTOP_SRC"
+fi
+
+# ── 3. Autostart entry ─────────────────────────────────────────────────────────
+if [ -f "$AUTOSTART_DST" ]; then
+    log "Removing autostart entry: $AUTOSTART_DST"
+    rm -f "$AUTOSTART_DST"
+else
+    log "Autostart entry not found: $AUTOSTART_DST"
+fi
+
+# ── 4. Installed script files ──────────────────────────────────────────────────
 for f in nodar_launcher.py nodar_launcher_run.sh; do
     if [ -f "$NODAR_DIR/$f" ]; then
         log "Removing $NODAR_DIR/$f"

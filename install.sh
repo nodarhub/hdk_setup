@@ -150,7 +150,7 @@ else
   log "[8/9] Skipping Hammerhead autostart (disabled by default, use -autostart true to enable)"
 fi
 
-# Step 9: HDK Launcher
+# Step 9: HDK Launcher (desktop icon + login autostart)
 log "[9/9] Installing HDK Launcher..."
 "$SCRIPT_DIR/launcher/install.sh"
 
