@@ -1,52 +1,67 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Nodar Launcher — installation script
+#
+# Downloads nodar_launcher.py from the Nodar documentation site, installs it
+# together with the run wrapper and default config to ~/.config/nodar/, and
+# creates a desktop icon and autostart entry.
+#
+# Usage (as the target user, or with sudo):
+#   ./install.sh
 
-# Nodar Launcher installation script
-# Installs nodar_launcher.py, nodar_launcher_run.sh, and nodar_launcher.cfg to
-# ~/.config/nodar/, then creates a Desktop icon and an autostart entry.
-# Usage: ./install.sh
+set -euo pipefail
 
-set -e
+LAUNCHER_URL="https://docs.nodarsensor.net/launcher/nodar_launcher.py"
 
-log() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $@"
-}
-
-log "Starting Nodar Launcher installation..."
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
 SCRIPT_DIR="$(cd -- "$(dirname "$0")" >/dev/null 2>&1; pwd -P)"
 
-# Get the actual user (handle sudo case)
+# Resolve the actual target user when run via sudo
 RUN_USER="${SUDO_USER:-$USER}"
 USER_HOME="$(eval echo ~"$RUN_USER")"
 
 NODAR_DIR="$USER_HOME/.config/nodar"
 RUN_SCRIPT="$NODAR_DIR/nodar_launcher_run.sh"
-DESKTOP_SRC="$USER_HOME/Desktop/nodar_launcher.desktop"
-AUTOSTART_DST="$USER_HOME/.config/autostart/nodar_launcher.desktop"
 
-# ── 1. Install files to ~/.config/nodar/ ──────────────────────────────────────
-log "Installing launcher files to $NODAR_DIR..."
+log "Installing Nodar Launcher for user: $RUN_USER"
+
+# ── 1. Create install directory ───────────────────────────────────────────────
 sudo -u "$RUN_USER" mkdir -p "$NODAR_DIR"
 
-sudo cp "$SCRIPT_DIR/nodar_launcher.py"     "$NODAR_DIR/nodar_launcher.py"
-sudo cp "$SCRIPT_DIR/nodar_launcher_run.sh" "$NODAR_DIR/nodar_launcher_run.sh"
-sudo chmod +x "$NODAR_DIR/nodar_launcher_run.sh"
-sudo chown "$RUN_USER" "$NODAR_DIR/nodar_launcher.py" "$NODAR_DIR/nodar_launcher_run.sh"
-
-# Copy config only if one doesn't already exist (don't overwrite user edits)
-if [ ! -f "$NODAR_DIR/nodar_launcher.cfg" ]; then
-    sudo cp "$SCRIPT_DIR/nodar_launcher.cfg" "$NODAR_DIR/nodar_launcher.cfg"
-    sudo chown "$RUN_USER" "$NODAR_DIR/nodar_launcher.cfg"
-    log "Config installed: $NODAR_DIR/nodar_launcher.cfg"
+# ── 2. Download nodar_launcher.py ─────────────────────────────────────────────
+log "Downloading launcher from $LAUNCHER_URL ..."
+if command -v curl &>/dev/null; then
+    sudo -u "$RUN_USER" curl -fsSL "$LAUNCHER_URL" -o "$NODAR_DIR/nodar_launcher.py"
+elif command -v wget &>/dev/null; then
+    sudo -u "$RUN_USER" wget -q "$LAUNCHER_URL" -O "$NODAR_DIR/nodar_launcher.py"
 else
-    log "Config already exists, skipping: $NODAR_DIR/nodar_launcher.cfg"
+    echo "Error: neither curl nor wget is available." >&2
+    exit 1
+fi
+sudo -u "$RUN_USER" chmod +x "$NODAR_DIR/nodar_launcher.py"
+log "Launcher installed: $NODAR_DIR/nodar_launcher.py"
+
+# ── 3. Install run wrapper ────────────────────────────────────────────────────
+sudo cp "$SCRIPT_DIR/nodar_launcher_run.sh" "$RUN_SCRIPT"
+sudo chmod +x "$RUN_SCRIPT"
+sudo chown "$RUN_USER" "$RUN_SCRIPT"
+log "Run wrapper installed: $RUN_SCRIPT"
+
+# ── 4. Install default config (skip if user already has one) ─────────────────
+CFG="$NODAR_DIR/nodar_launcher.cfg"
+if [ ! -f "$CFG" ]; then
+    sudo cp "$SCRIPT_DIR/nodar_launcher.cfg" "$CFG"
+    sudo chown "$RUN_USER" "$CFG"
+    log "Config installed: $CFG"
+else
+    log "Config already exists — skipping to preserve user edits: $CFG"
 fi
 
-# ── Helper: write a .desktop file ─────────────────────────────────────────────
+# ── 5. Helper: write a .desktop file ─────────────────────────────────────────
 write_desktop() {
     local path="$1"
-    local autostart="$2"   # true | false
-    sudo -u "$RUN_USER" tee "$path" > /dev/null << EOF
+    local autostart="${2:-false}"
+    sudo -u "$RUN_USER" tee "$path" > /dev/null <<EOF
 [Desktop Entry]
 Version=1.0
 Type=Application
@@ -60,34 +75,31 @@ StartupNotify=false
 Categories=Utility;
 EOF
     if [ "$autostart" = "true" ]; then
-        sudo -u "$RUN_USER" tee -a "$path" > /dev/null << EOF
+        sudo -u "$RUN_USER" tee -a "$path" > /dev/null <<EOF
 X-GNOME-Autostart-enabled=true
 X-GNOME-Autostart-Delay=5
 EOF
     fi
+    sudo chmod +x "$path"
 }
 
-# ── 2. Desktop icon ────────────────────────────────────────────────────────────
-log "Creating desktop icon at $DESKTOP_SRC..."
+# ── 6. Desktop icon ───────────────────────────────────────────────────────────
+DESKTOP_FILE="$USER_HOME/Desktop/nodar_launcher.desktop"
 sudo -u "$RUN_USER" mkdir -p "$USER_HOME/Desktop"
-write_desktop "$DESKTOP_SRC" false
-sudo chmod +x "$DESKTOP_SRC"
+write_desktop "$DESKTOP_FILE" false
 
-# Mark as trusted so GNOME allows double-clicking without a warning dialog
 if command -v gio &>/dev/null; then
-    sudo -u "$RUN_USER" gio set "$DESKTOP_SRC" metadata::trusted true 2>/dev/null && \
-        log "Desktop icon marked as trusted." || \
-        log "Note: could not mark icon as trusted — right-click → Allow Launching."
+    sudo -u "$RUN_USER" gio set "$DESKTOP_FILE" metadata::trusted true 2>/dev/null \
+        && log "Desktop icon marked as trusted." \
+        || log "Note: could not mark icon as trusted — right-click → Allow Launching."
 fi
+log "Desktop icon created: $DESKTOP_FILE"
 
-log "Desktop icon created: $DESKTOP_SRC"
-
-# ── 3. Autostart entry ─────────────────────────────────────────────────────────
-log "Creating autostart entry at $AUTOSTART_DST..."
+# ── 7. Autostart entry ────────────────────────────────────────────────────────
+AUTOSTART_FILE="$USER_HOME/.config/autostart/nodar_launcher.desktop"
 sudo -u "$RUN_USER" mkdir -p "$USER_HOME/.config/autostart"
-write_desktop "$AUTOSTART_DST" true
-log "Autostart entry created: $AUTOSTART_DST"
+write_desktop "$AUTOSTART_FILE" true
+log "Autostart entry created: $AUTOSTART_FILE"
 
-log "Nodar Launcher installation complete."
-log "The launcher will start automatically at next login."
-log "To disable autostart: rm $AUTOSTART_DST"
+log "Installation complete. The launcher will start automatically at next login."
+log "To uninstall: sudo ./uninstall.sh"
