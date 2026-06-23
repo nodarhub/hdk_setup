@@ -61,45 +61,49 @@ log "HDK Uninstall Script"
 log "Device type: $DEVICE_TYPE"
 log "=========================================="
 
-# Step 1: Hammerhead autostart uninstall
-log "[1/7] Uninstalling Hammerhead autostart service..."
+# Step 1: HDK Launcher uninstall
+log "[1/8] Uninstalling HDK Launcher..."
+"$SCRIPT_DIR/launcher/uninstall.sh" || log "Launcher uninstall completed with warnings"
+
+# Step 2: Hammerhead autostart uninstall
+log "[2/8] Uninstalling Hammerhead autostart service..."
 "$SCRIPT_DIR/hammerhead/uninstall.sh" || log "Hammerhead uninstall completed with warnings"
 
-# Step 2: Clock uninstall
-log "[2/7] Uninstalling clock service..."
+# Step 3: Clock uninstall
+log "[3/8] Uninstalling clock service..."
 "$SCRIPT_DIR/clock/uninstall.sh" || log "Clock uninstall completed with warnings"
 
-# Step 3: PHC2SYS uninstall (safe no-op if never installed)
-log "[3/7] Uninstalling phc2sys..."
+# Step 4: PHC2SYS uninstall (safe no-op if never installed)
+log "[4/8] Uninstalling phc2sys..."
 "$SCRIPT_DIR/phc2sys/uninstall.sh" || log "phc2sys uninstall completed with warnings"
 
-# Step 4: PTP Slave uninstall (safe no-op if never installed)
-log "[4/7] Uninstalling PTP slave..."
+# Step 5: PTP Slave uninstall (safe no-op if never installed)
+log "[5/8] Uninstalling PTP slave..."
 "$SCRIPT_DIR/ptp_slave/uninstall.sh" || log "PTP slave uninstall completed with warnings"
 
 # Re-enable systemd-timesyncd in case it was disabled by external time sync
-log "[4/7] Re-enabling systemd-timesyncd..."
+log "[5/8] Re-enabling systemd-timesyncd..."
 sudo systemctl enable systemd-timesyncd 2>/dev/null || true
 sudo systemctl start systemd-timesyncd 2>/dev/null || true
 
-# Step 5: PTP uninstall
-log "[5/7] Uninstalling PTP..."
+# Step 6: PTP uninstall
+log "[6/8] Uninstalling PTP..."
 "$SCRIPT_DIR/ptp/uninstall.sh" || log "PTP uninstall completed with warnings"
 
-# Step 6: Network uninstall (OnLogic only)
+# Step 7: Network uninstall (OnLogic only)
 if [ "$DEVICE_TYPE" == "onlogic" ]; then
-  log "[6/7] Uninstalling network..."
+  log "[7/8] Uninstalling network..."
   "$SCRIPT_DIR/network/uninstall.sh" || log "Network uninstall completed with warnings"
 else
-  log "[6/7] Skipping network uninstall (Jetson)"
+  log "[7/8] Skipping network uninstall (Jetson)"
 fi
 
-# Step 7: MTU uninstall (Jetson only - OnLogic MTU is handled via netplan in network uninstall)
+# Step 8: MTU uninstall (Jetson only - OnLogic MTU is handled via netplan in network uninstall)
 if [ "$DEVICE_TYPE" == "jetson" ]; then
-  log "[7/7] Uninstalling MTU for eth0..."
+  log "[8/8] Uninstalling MTU for eth0..."
   "$SCRIPT_DIR/mtu/uninstall.sh" eth0 || log "MTU uninstall completed with warnings"
 else
-  log "[7/7] Skipping MTU uninstall (OnLogic - handled via netplan)"
+  log "[8/8] Skipping MTU uninstall (OnLogic - handled via netplan)"
 fi
 
 log "=========================================="

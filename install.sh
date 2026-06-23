@@ -92,46 +92,46 @@ fi
 log "=========================================="
 
 # Step 1: Disable background services
-log "[1/8] Disabling background services..."
+log "[1/9] Disabling background services..."
 "$SCRIPT_DIR/background_services/disable_background_services.sh"
 
 # Step 2: MTU Setup (Jetson only - OnLogic MTU is set via netplan in network setup)
 if [ "$DEVICE_TYPE" == "jetson" ]; then
-  log "[2/8] Setting up MTU for eth0..."
+  log "[2/9] Setting up MTU for eth0..."
   "$SCRIPT_DIR/mtu/install.sh" eth0
 else
-  log "[2/8] Skipping MTU setup (OnLogic - handled via netplan)"
+  log "[2/9] Skipping MTU setup (OnLogic - handled via netplan)"
 fi
 
 # Step 3: Network Setup (OnLogic only)
 if [ "$DEVICE_TYPE" == "onlogic" ]; then
-  log "[3/8] Setting up network for $CAMERA_INTERFACE_1 and $CAMERA_INTERFACE_2..."
+  log "[3/9] Setting up network for $CAMERA_INTERFACE_1 and $CAMERA_INTERFACE_2..."
   "$SCRIPT_DIR/network/install.sh" "$CAMERA_INTERFACE_1" "$CAMERA_INTERFACE_2" -external-time-sync "$EXTERNAL_TIME_SYNC" -sync-ip "$SYNC_IP"
 else
-  log "[3/8] Skipping network setup (Jetson)"
+  log "[3/9] Skipping network setup (Jetson)"
 fi
 
 # Step 4: PTP Slave Setup (OnLogic only, when external time sync is enabled)
 if [ "$EXTERNAL_TIME_SYNC" == "true" ] && [ "$DEVICE_TYPE" == "onlogic" ]; then
-  log "[4/8] Disabling systemd-timesyncd (NTP) to avoid conflicts with PHC2SYS..."
+  log "[4/9] Disabling systemd-timesyncd (NTP) to avoid conflicts with PHC2SYS..."
   sudo systemctl stop systemd-timesyncd 2>/dev/null || true
   sudo systemctl disable systemd-timesyncd 2>/dev/null || true
-  log "[4/8] Setting up PTP slave for ethLAN4..."
+  log "[4/9] Setting up PTP slave for ethLAN4..."
   "$SCRIPT_DIR/ptp_slave/install.sh" -i ethLAN4
 else
-  log "[4/8] Skipping PTP slave setup (not enabled or not OnLogic)"
+  log "[4/9] Skipping PTP slave setup (not enabled or not OnLogic)"
 fi
 
 # Step 5: PHC2SYS Setup (OnLogic only, when external time sync is enabled)
 if [ "$EXTERNAL_TIME_SYNC" == "true" ] && [ "$DEVICE_TYPE" == "onlogic" ]; then
-  log "[5/8] Setting up phc2sys for ethLAN4..."
+  log "[5/9] Setting up phc2sys for ethLAN4..."
   "$SCRIPT_DIR/phc2sys/install.sh" -i ethLAN4
 else
-  log "[5/8] Skipping phc2sys setup (not enabled or not OnLogic)"
+  log "[5/9] Skipping phc2sys setup (not enabled or not OnLogic)"
 fi
 
 # Step 6: PTP Setup
-log "[6/8] Setting up PTP..."
+log "[6/9] Setting up PTP..."
 if [ "$DEVICE_TYPE" == "jetson" ]; then
   "$SCRIPT_DIR/ptp/install.sh" -i eth0
 elif [ "$DEVICE_TYPE" == "onlogic" ]; then
@@ -139,16 +139,20 @@ elif [ "$DEVICE_TYPE" == "onlogic" ]; then
 fi
 
 # Step 7: Clock Setup
-log "[7/8] Setting up clock service..."
+log "[7/9] Setting up clock service..."
 "$SCRIPT_DIR/clock/install.sh"
 
 # Step 8: Hammerhead Autostart (optional)
 if [ "$INSTALL_AUTOSTART" == "true" ]; then
-  log "[8/8] Setting up Hammerhead autostart service..."
+  log "[8/9] Setting up Hammerhead autostart service..."
   "$SCRIPT_DIR/hammerhead/install.sh" -external-time-sync "$EXTERNAL_TIME_SYNC"
 else
-  log "[8/8] Skipping Hammerhead autostart (disabled by default, use -autostart true to enable)"
+  log "[8/9] Skipping Hammerhead autostart (disabled by default, use -autostart true to enable)"
 fi
+
+# Step 9: HDK Launcher (desktop icon + login autostart)
+log "[9/9] Installing HDK Launcher..."
+"$SCRIPT_DIR/launcher/install.sh"
 
 log "=========================================="
 log "HDK Setup completed successfully!"
