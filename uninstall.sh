@@ -2,7 +2,8 @@
 
 # HDK Uninstall Script - Main orchestrator for target device uninstall
 # Usage examples:
-#   Jetson:   ./uninstall.sh -d jetson
+#   Jetson AGX Orin:  ./uninstall.sh -d jetson
+#   Jetson Orin Nano: ./uninstall.sh -d orin-nano
 #   OnLogic:  ./uninstall.sh -d onlogic -cam_if1 ethLAN2 -cam_if2 ethLAN3
 
 set -e
@@ -16,6 +17,9 @@ SCRIPT_DIR="$(cd -- "$(dirname "$0")" >/dev/null 2>&1; pwd -P)"
 DEVICE_TYPE=""
 CAMERA_INTERFACE_1="ethLAN2"
 CAMERA_INTERFACE_2="ethLAN3"
+JETSON_INTERFACE=""
+
+USAGE="Usage: $0 -d <jetson|orin-nano|onlogic> [-cam_if1 <iface>] [-cam_if2 <iface>]"
 
 # Logging function
 log() {
@@ -27,8 +31,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -d)
       DEVICE_TYPE="$2"
-      if [[ "$DEVICE_TYPE" != "jetson" && "$DEVICE_TYPE" != "onlogic" ]]; then
-        echo "Error: Invalid device type '$DEVICE_TYPE'. Must be 'jetson' or 'onlogic'."
+      if [[ "$DEVICE_TYPE" != "jetson" && "$DEVICE_TYPE" != "orin-nano" && "$DEVICE_TYPE" != "onlogic" ]]; then
+        echo "Error: Invalid device type '$DEVICE_TYPE'. Must be 'jetson', 'orin-nano' or 'onlogic'."
         exit 1
       fi
       shift 2
@@ -43,7 +47,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "Error: Unknown option '$1'"
-      echo "Usage: $0 -d <jetson|onlogic> [-cam_if1 <iface>] [-cam_if2 <iface>]"
+      echo "$USAGE"
       exit 1
       ;;
   esac
@@ -52,8 +56,15 @@ done
 # Validate required flags
 if [[ -z "$DEVICE_TYPE" ]]; then
   echo "Error: Device type (-d) is required."
-  echo "Usage: $0 -d <jetson|onlogic> [-cam_if1 <iface>] [-cam_if2 <iface>]"
+  echo "$USAGE"
   exit 1
+fi
+
+# Resolve per-board settings (must match install.sh)
+if [[ "$DEVICE_TYPE" == "jetson" ]]; then
+  JETSON_INTERFACE="eth0"
+elif [[ "$DEVICE_TYPE" == "orin-nano" ]]; then
+  JETSON_INTERFACE="enP8p1s0"
 fi
 
 log "=========================================="
@@ -95,9 +106,9 @@ else
 fi
 
 # Step 7: MTU uninstall (Jetson only - OnLogic MTU is handled via netplan in network uninstall)
-if [ "$DEVICE_TYPE" == "jetson" ]; then
-  log "[7/7] Uninstalling MTU for eth0..."
-  "$SCRIPT_DIR/mtu/uninstall.sh" eth0 || log "MTU uninstall completed with warnings"
+if [ "$DEVICE_TYPE" != "onlogic" ]; then
+  log "[7/7] Uninstalling MTU for $JETSON_INTERFACE..."
+  "$SCRIPT_DIR/mtu/uninstall.sh" "$JETSON_INTERFACE" || log "MTU uninstall completed with warnings"
 else
   log "[7/7] Skipping MTU uninstall (OnLogic - handled via netplan)"
 fi

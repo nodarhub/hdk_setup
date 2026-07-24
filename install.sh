@@ -2,7 +2,8 @@
 
 # HDK Setup Script - Main orchestrator for target device setup
 # Usage examples:
-#   Jetson:   ./install.sh -d jetson
+#   Jetson AGX Orin: ./install.sh -d jetson
+#   Jetson Orin Nano: ./install.sh -d orin-nano
 #   OnLogic:  ./install.sh -d onlogic -cam_if1 ethLAN2 -cam_if2 ethLAN3
 #   With external time sync: ./install.sh -d onlogic -cam_if1 ethLAN2 -cam_if2 ethLAN3 -external-time-sync true
 #   With custom sync IP:     ./install.sh -d onlogic -cam_if1 ethLAN2 -cam_if2 ethLAN3 -external-time-sync true -sync-ip 10.0.0.50/24
@@ -21,6 +22,11 @@ CAMERA_INTERFACE_2="ethLAN3"
 INSTALL_AUTOSTART=false
 EXTERNAL_TIME_SYNC=false
 SYNC_IP="192.168.30.25/24"
+# Jetson-only settings, resolved per board after flag parsing.
+JETSON_INTERFACE=""
+POWER_MODE=""
+
+USAGE="Usage: $0 -d <jetson|orin-nano|onlogic> [-cam_if1 <iface>] [-cam_if2 <iface>] [-autostart <true|false>] [-external-time-sync <true|false>] [-sync-ip <ip/cidr>] [-power-mode <n>]"
 
 # Logging function
 log() {
@@ -32,8 +38,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -d)
       DEVICE_TYPE="$2"
-      if [[ "$DEVICE_TYPE" != "jetson" && "$DEVICE_TYPE" != "onlogic" ]]; then
-        echo "Error: Invalid device type '$DEVICE_TYPE'. Must be 'jetson' or 'onlogic'."
+      if [[ "$DEVICE_TYPE" != "jetson" && "$DEVICE_TYPE" != "orin-nano" && "$DEVICE_TYPE" != "onlogic" ]]; then
+        echo "Error: Invalid device type '$DEVICE_TYPE'. Must be 'jetson', 'orin-nano' or 'onlogic'."
         exit 1
       fi
       shift 2
@@ -68,9 +74,13 @@ while [[ $# -gt 0 ]]; do
       SYNC_IP="$2"
       shift 2
       ;;
+    -power-mode)
+      POWER_MODE="$2"
+      shift 2
+      ;;
     *)
       echo "Error: Unknown option '$1'"
-      echo "Usage: $0 -d <jetson|onlogic> [-cam_if1 <iface>] [-cam_if2 <iface>] [-autostart <true|false>] [-external-time-sync <true|false>] [-sync-ip <ip/cidr>]"
+      echo "$USAGE"
       exit 1
       ;;
   esac
@@ -79,8 +89,21 @@ done
 # Validate required flags
 if [[ -z "$DEVICE_TYPE" ]]; then
   echo "Error: Device type (-d) is required."
-  echo "Usage: $0 -d <jetson|onlogic> [-cam_if1 <iface>] [-cam_if2 <iface>] [-autostart <true|false>] [-external-time-sync <true|false>] [-sync-ip <ip/cidr>]"
+  echo "$USAGE"
   exit 1
+fi
+
+# Resolve per-board settings for the Jetson family.
+# AGX Orin: onboard 10GbE is the SoC MAC (eth0), and nvpmodel mode 0 is MAXN.
+# Orin Nano: onboard 1GbE is a PCIe NIC (enP8p1s0), and MAXN is mode 2.
+if [[ "$DEVICE_TYPE" == "jetson" ]]; then
+  JETSON_INTERFACE="eth0"
+  POWER_MODE="${POWER_MODE:-0}"
+elif [[ "$DEVICE_TYPE" == "orin-nano" ]]; then
+  JETSON_INTERFACE="enP8p1s0"
+  POWER_MODE="${POWER_MODE:-2}"
+else
+  POWER_MODE="${POWER_MODE:-0}"
 fi
 
 log "=========================================="
@@ -96,9 +119,9 @@ log "[1/8] Disabling background services..."
 "$SCRIPT_DIR/background_services/disable_background_services.sh"
 
 # Step 2: MTU Setup (Jetson only - OnLogic MTU is set via netplan in network setup)
-if [ "$DEVICE_TYPE" == "jetson" ]; then
-  log "[2/8] Setting up MTU for eth0..."
-  "$SCRIPT_DIR/mtu/install.sh" eth0
+if [ "$DEVICE_TYPE" != "onlogic" ]; then
+  log "[2/8] Setting up MTU for $JETSON_INTERFACE..."
+  "$SCRIPT_DIR/mtu/install.sh" "$JETSON_INTERFACE"
 else
   log "[2/8] Skipping MTU setup (OnLogic - handled via netplan)"
 fi
@@ -132,15 +155,15 @@ fi
 
 # Step 6: PTP Setup
 log "[6/8] Setting up PTP..."
-if [ "$DEVICE_TYPE" == "jetson" ]; then
-  "$SCRIPT_DIR/ptp/install.sh" -i eth0
-elif [ "$DEVICE_TYPE" == "onlogic" ]; then
+if [ "$DEVICE_TYPE" == "onlogic" ]; then
   "$SCRIPT_DIR/ptp/install.sh" -i "$CAMERA_INTERFACE_1" -i "$CAMERA_INTERFACE_2"
+else
+  "$SCRIPT_DIR/ptp/install.sh" -i "$JETSON_INTERFACE"
 fi
 
 # Step 7: Clock Setup
-log "[7/8] Setting up clock service..."
-"$SCRIPT_DIR/clock/install.sh"
+log "[7/8] Setting up clock service (nvpmodel mode $POWER_MODE)..."
+"$SCRIPT_DIR/clock/install.sh" -power-mode "$POWER_MODE"
 
 # Step 8: Hammerhead Autostart (optional)
 if [ "$INSTALL_AUTOSTART" == "true" ]; then

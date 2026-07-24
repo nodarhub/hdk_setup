@@ -7,6 +7,7 @@ The HDK comes with pre-setup software and system configurations. The operating s
 ## Supported Platforms
 
 - **NVIDIA Jetson Orin AGX** - Embedded GPU computing device
+- **NVIDIA Jetson Orin Nano** - Entry-level embedded GPU computing device
 - **OnLogic with Orin AGX** - Industrial edge computing platform
 
 ## Overview
@@ -61,11 +62,19 @@ hdk_setup/
 
 ## Installation
 
-### Jetson Devices
+### Jetson AGX Orin
 
 ```bash
 ./install.sh -d jetson
 ```
+
+### Jetson Orin Nano
+
+```bash
+./install.sh -d orin-nano
+```
+
+This uses `enP8p1s0` as the camera/PTP interface and nvpmodel mode `2` (MAXN SUPER).
 
 ### OnLogic Devices
 
@@ -110,9 +119,10 @@ The `-autostart` flag is `false` by default.
 
 | Flag | Required | Default | Description |
 |------|----------|---------|-------------|
-| `-d` | Yes | — | Device type: `jetson` or `onlogic` |
+| `-d` | Yes | — | Device type: `jetson` (AGX Orin), `orin-nano`, or `onlogic` |
 | `-cam_if1` | No | `ethLAN2` | First camera interface (OnLogic) |
 | `-cam_if2` | No | `ethLAN3` | Second camera interface (OnLogic) |
+| `-power-mode` | No | `0` (jetson) / `2` (orin-nano) | nvpmodel index of the max-performance profile |
 | `-autostart` | No | `false` | Enable Hammerhead autostart service |
 | `-external-time-sync` | No | `false` | Enable external PTP time sync (OnLogic only) |
 | `-sync-ip` | No | `192.168.30.25/24` | IP/CIDR for ethLAN4 when external time sync is enabled |
@@ -123,6 +133,7 @@ The `-autostart` flag is `false` by default.
 
 ```bash
 ./uninstall.sh -d jetson
+./uninstall.sh -d orin-nano
 ```
 
 ### OnLogic Devices
@@ -210,7 +221,7 @@ Synchronizes the system clock from the PTP hardware clock. Only installed when `
 
 Maximizes CPU/GPU clocks for optimal real-time performance:
 
-- Sets maximum power profile (`nvpmodel -m 0`)
+- Sets maximum power profile (`nvpmodel -m <mode>`; mode `0` = MAXN on AGX Orin, mode `2` = MAXN SUPER on Orin Nano, override with `-power-mode`)
 - Runs `jetson_clocks` for maximum CPU, GPU, and EMC (memory) frequencies
 - Maximizes VIC (Video Image Compositor) frequency if available
 - Automatically restores default clocks on shutdown
@@ -244,7 +255,7 @@ sudo journalctl -u hammerhead -f
 
 - Linux (Ubuntu/Debian-based)
 - sudo privileges (scripts invoke sudo internally as needed)
-- For Jetson: NVIDIA Jetson Orin AGX with JetPack
+- For Jetson: NVIDIA Jetson Orin AGX or Orin Nano with JetPack
 - For OnLogic: OnLogic with Orin AGX and multiple Ethernet interfaces
 
 ## Services Installed

@@ -1,7 +1,11 @@
 #!/bin/bash
 
 # Clock service installation script (Jetson clocks)
-# Usage: ./install.sh
+# Usage: ./install.sh [-power-mode <n>]
+#
+# The nvpmodel index of the maximum performance profile is board specific:
+#   AGX Orin  -> 0 (MAXN)
+#   Orin Nano -> 2 (MAXN SUPER)
 
 set -e
 
@@ -9,7 +13,28 @@ log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $@"
 }
 
-log "Starting clock service installation..."
+# Parse arguments
+POWER_MODE="0"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -power-mode)
+      POWER_MODE="$2"
+      shift 2
+      ;;
+    *)
+      echo "Error: Unknown option '$1'"
+      echo "Usage: $0 [-power-mode <n>]"
+      exit 1
+      ;;
+  esac
+done
+
+if ! [[ "$POWER_MODE" =~ ^[0-9]+$ ]]; then
+  echo "Error: -power-mode must be a non-negative integer, got '$POWER_MODE'."
+  exit 1
+fi
+
+log "Starting clock service installation (nvpmodel mode $POWER_MODE)..."
 
 # Path for the clocks script
 CLOCKS_SCRIPT="/usr/local/bin/clocks.sh"
@@ -52,7 +77,7 @@ maxclocks() {
        echo $(nvpmodel -q | tail -n1) > $pwrfile
    fi
 
-   nvpmodel -m 0
+   nvpmodel -m '"$POWER_MODE"'
    jetson_clocks
 
    if [ -n "$vicctrl" ]; then
