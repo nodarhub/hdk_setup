@@ -13,13 +13,16 @@ trap 'echo "Error occurred at $BASH_COMMAND"' ERR
 # Get script directory
 SCRIPT_DIR="$(cd -- "$(dirname "$0")" >/dev/null 2>&1; pwd -P)"
 
+# Shared helpers (interface detection)
+source "$SCRIPT_DIR/lib/net_detect.sh"
+
 # Default values
 DEVICE_TYPE=""
 CAMERA_INTERFACE_1="ethLAN2"
 CAMERA_INTERFACE_2="ethLAN3"
-JETSON_INTERFACE=""
+CAMERA_INTERFACE=""
 
-USAGE="Usage: $0 -d <jetson|orin-nano|onlogic> [-cam_if1 <iface>] [-cam_if2 <iface>]"
+USAGE="Usage: $0 -d <jetson|orin-nano|onlogic> [-cam_if <iface>] [-cam_if1 <iface>] [-cam_if2 <iface>]"
 
 # Logging function
 log() {
@@ -45,6 +48,10 @@ while [[ $# -gt 0 ]]; do
       CAMERA_INTERFACE_2="$2"
       shift 2
       ;;
+    -cam_if)
+      CAMERA_INTERFACE="$2"
+      shift 2
+      ;;
     *)
       echo "Error: Unknown option '$1'"
       echo "$USAGE"
@@ -60,11 +67,12 @@ if [[ -z "$DEVICE_TYPE" ]]; then
   exit 1
 fi
 
-# Resolve per-board settings (must match install.sh)
+# Resolve the interface (must match install.sh). For orin-nano, best-effort
+# autodetect the USB adapter unless given explicitly (uninstall never prompts).
 if [[ "$DEVICE_TYPE" == "jetson" ]]; then
-  JETSON_INTERFACE="eth0"
-elif [[ "$DEVICE_TYPE" == "orin-nano" ]]; then
-  JETSON_INTERFACE="enP8p1s0"
+  CAMERA_INTERFACE="${CAMERA_INTERFACE:-eth0}"
+elif [[ "$DEVICE_TYPE" == "orin-nano" && -z "$CAMERA_INTERFACE" ]]; then
+  CAMERA_INTERFACE="$(detect_usb_ethernet | head -n1)"
 fi
 
 log "=========================================="
@@ -93,9 +101,13 @@ log "[4/7] Re-enabling systemd-timesyncd..."
 sudo systemctl enable systemd-timesyncd 2>/dev/null || true
 sudo systemctl start systemd-timesyncd 2>/dev/null || true
 
-# Step 5: PTP uninstall
+# Step 5: PTP uninstall (Orin Nano uses ptpd; AGX Orin and OnLogic use ptp4l)
 log "[5/7] Uninstalling PTP..."
-"$SCRIPT_DIR/ptp/uninstall.sh" || log "PTP uninstall completed with warnings"
+if [ "$DEVICE_TYPE" == "orin-nano" ]; then
+  "$SCRIPT_DIR/ptpd/uninstall.sh" || log "ptpd uninstall completed with warnings"
+else
+  "$SCRIPT_DIR/ptp/uninstall.sh" || log "PTP uninstall completed with warnings"
+fi
 
 # Step 6: Network uninstall (OnLogic only)
 if [ "$DEVICE_TYPE" == "onlogic" ]; then
@@ -105,12 +117,16 @@ else
   log "[6/7] Skipping network uninstall (Jetson)"
 fi
 
-# Step 7: MTU uninstall (Jetson only - OnLogic MTU is handled via netplan in network uninstall)
-if [ "$DEVICE_TYPE" != "onlogic" ]; then
-  log "[7/7] Uninstalling MTU for $JETSON_INTERFACE..."
-  "$SCRIPT_DIR/mtu/uninstall.sh" "$JETSON_INTERFACE" || log "MTU uninstall completed with warnings"
+# Step 7: Camera interface uninstall (Jetson only): MTU + IPv4 link-local.
+# OnLogic MTU/addressing is handled via netplan in the network uninstall step.
+if [ "$DEVICE_TYPE" == "onlogic" ]; then
+  log "[7/7] Camera interface cleanup handled in network step (OnLogic - netplan)"
+elif [ -z "$CAMERA_INTERFACE" ]; then
+  log "[7/7] Skipping camera interface uninstall (no USB Ethernet adapter detected; pass -cam_if <iface> to clean it up)"
 else
-  log "[7/7] Skipping MTU uninstall (OnLogic - handled via netplan)"
+  log "[7/7] Uninstalling camera interface config for $CAMERA_INTERFACE..."
+  "$SCRIPT_DIR/mtu/uninstall.sh" "$CAMERA_INTERFACE" || log "MTU uninstall completed with warnings"
+  "$SCRIPT_DIR/link_local/uninstall.sh" "$CAMERA_INTERFACE" || log "Link-local uninstall completed with warnings"
 fi
 
 log "=========================================="

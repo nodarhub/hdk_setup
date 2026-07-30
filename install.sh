@@ -15,6 +15,9 @@ trap 'echo "Error occurred at $BASH_COMMAND"' ERR
 # Get script directory
 SCRIPT_DIR="$(cd -- "$(dirname "$0")" >/dev/null 2>&1; pwd -P)"
 
+# Shared helpers (interface detection)
+source "$SCRIPT_DIR/lib/net_detect.sh"
+
 # Default values
 DEVICE_TYPE=""
 CAMERA_INTERFACE_1="ethLAN2"
@@ -23,10 +26,10 @@ INSTALL_AUTOSTART=false
 EXTERNAL_TIME_SYNC=false
 SYNC_IP="192.168.30.25/24"
 # Jetson-only settings, resolved per board after flag parsing.
-JETSON_INTERFACE=""
+CAMERA_INTERFACE=""
 POWER_MODE=""
 
-USAGE="Usage: $0 -d <jetson|orin-nano|onlogic> [-cam_if1 <iface>] [-cam_if2 <iface>] [-autostart <true|false>] [-external-time-sync <true|false>] [-sync-ip <ip/cidr>] [-power-mode <n>]"
+USAGE="Usage: $0 -d <jetson|orin-nano|onlogic> [-cam_if <iface>] [-cam_if1 <iface>] [-cam_if2 <iface>] [-autostart <true|false>] [-external-time-sync <true|false>] [-sync-ip <ip/cidr>] [-power-mode <n>]"
 
 # Logging function
 log() {
@@ -50,6 +53,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     -cam_if2)
       CAMERA_INTERFACE_2="$2"
+      shift 2
+      ;;
+    -cam_if)
+      CAMERA_INTERFACE="$2"
       shift 2
       ;;
     -autostart)
@@ -93,15 +100,59 @@ if [[ -z "$DEVICE_TYPE" ]]; then
   exit 1
 fi
 
-# Resolve per-board settings for the Jetson family.
-# AGX Orin: onboard 10GbE is the SoC MAC (eth0), and nvpmodel mode 0 is MAXN.
-# Orin Nano: onboard 1GbE is a PCIe NIC (enP8p1s0), and MAXN is mode 2.
+# Autodetect the Orin Nano's USB-to-Ethernet camera adapter and confirm with the
+# user. An explicit -cam_if wins and skips detection.
+resolve_orin_nano_interface() {
+  [ -n "$CAMERA_INTERFACE" ] && return 0
+
+  local candidates=() reply i
+  mapfile -t candidates < <(detect_usb_ethernet)
+
+  if [ "${#candidates[@]}" -eq 0 ]; then
+    log "No USB Ethernet adapter detected. Available interfaces:"
+    ip -o link show | awk -F': ' '{print "    " $2}'
+    if [ -e /dev/tty ]; then
+      read -rp "Enter the camera interface name: " reply </dev/tty || true
+      CAMERA_INTERFACE="$reply"
+    fi
+  elif [ "${#candidates[@]}" -eq 1 ]; then
+    CAMERA_INTERFACE="${candidates[0]}"
+    if [ -e /dev/tty ]; then
+      read -rp "Detected USB Ethernet adapter '${candidates[0]}'. Press Enter to use it, or type another interface name: " reply </dev/tty || true
+      [ -n "$reply" ] && CAMERA_INTERFACE="$reply"
+    fi
+  else
+    log "Multiple USB Ethernet adapters detected:"
+    for i in "${!candidates[@]}"; do
+      log "    $((i + 1))) ${candidates[$i]}"
+    done
+    if [ -e /dev/tty ]; then
+      read -rp "Select [1-${#candidates[@]}] or type an interface name (Enter for 1): " reply </dev/tty || true
+    fi
+    if [ -z "$reply" ]; then
+      CAMERA_INTERFACE="${candidates[0]}"
+    elif [[ "$reply" =~ ^[0-9]+$ ]] && [ "$reply" -ge 1 ] && [ "$reply" -le "${#candidates[@]}" ]; then
+      CAMERA_INTERFACE="${candidates[$((reply - 1))]}"
+    else
+      CAMERA_INTERFACE="$reply"
+    fi
+  fi
+
+  if [ -z "$CAMERA_INTERFACE" ]; then
+    echo "Error: No camera interface selected. Pass one explicitly with -cam_if <iface>."
+    exit 1
+  fi
+}
+
+# Per-board settings: AGX Orin uses eth0 and MAXN (mode 0); Orin Nano uses the
+# autodetected USB adapter and MAXN SUPER (mode 2).
 if [[ "$DEVICE_TYPE" == "jetson" ]]; then
-  JETSON_INTERFACE="eth0"
+  CAMERA_INTERFACE="${CAMERA_INTERFACE:-eth0}"
   POWER_MODE="${POWER_MODE:-0}"
 elif [[ "$DEVICE_TYPE" == "orin-nano" ]]; then
-  JETSON_INTERFACE="enP8p1s0"
+  resolve_orin_nano_interface
   POWER_MODE="${POWER_MODE:-2}"
+  log "Orin Nano camera interface: $CAMERA_INTERFACE"
 else
   POWER_MODE="${POWER_MODE:-0}"
 fi
@@ -118,12 +169,14 @@ log "=========================================="
 log "[1/8] Disabling background services..."
 "$SCRIPT_DIR/background_services/disable_background_services.sh"
 
-# Step 2: MTU Setup (Jetson only - OnLogic MTU is set via netplan in network setup)
+# Step 2: Camera interface setup (Jetson only): MTU + IPv4 link-local.
+# OnLogic handles both via netplan in the network step.
 if [ "$DEVICE_TYPE" != "onlogic" ]; then
-  log "[2/8] Setting up MTU for $JETSON_INTERFACE..."
-  "$SCRIPT_DIR/mtu/install.sh" "$JETSON_INTERFACE"
+  log "[2/8] Configuring camera interface $CAMERA_INTERFACE (MTU 9000 + IPv4 link-local)..."
+  "$SCRIPT_DIR/mtu/install.sh" "$CAMERA_INTERFACE"
+  "$SCRIPT_DIR/link_local/install.sh" "$CAMERA_INTERFACE"
 else
-  log "[2/8] Skipping MTU setup (OnLogic - handled via netplan)"
+  log "[2/8] Camera interface setup deferred to network step (OnLogic - netplan + DHCP)"
 fi
 
 # Step 3: Network Setup (OnLogic only)
@@ -153,12 +206,15 @@ else
   log "[5/8] Skipping phc2sys setup (not enabled or not OnLogic)"
 fi
 
-# Step 6: PTP Setup
+# Step 6: PTP Setup. AGX Orin and OnLogic use ptp4l (hardware timestamping);
+# the Orin Nano's adapter has no PTP hardware clock, so it uses ptpd (software).
 log "[6/8] Setting up PTP..."
 if [ "$DEVICE_TYPE" == "onlogic" ]; then
   "$SCRIPT_DIR/ptp/install.sh" -i "$CAMERA_INTERFACE_1" -i "$CAMERA_INTERFACE_2"
+elif [ "$DEVICE_TYPE" == "orin-nano" ]; then
+  "$SCRIPT_DIR/ptpd/install.sh" -i "$CAMERA_INTERFACE"
 else
-  "$SCRIPT_DIR/ptp/install.sh" -i "$JETSON_INTERFACE"
+  "$SCRIPT_DIR/ptp/install.sh" -i "$CAMERA_INTERFACE"
 fi
 
 # Step 7: Clock Setup
