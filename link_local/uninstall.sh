@@ -30,9 +30,11 @@ else
     # We modified an existing profile; revert its IPv4 method to automatic.
     CON="$(nmcli -g GENERAL.CONNECTION device show "$INTERFACE_NAME" 2>/dev/null || true)"
     if [ -n "$CON" ] && [ "$CON" != "--" ]; then
-        log "Reverting ipv4.method to auto on connection '$CON'..."
+        log "Reverting ipv4.method to auto on connection '$CON' (applies on next activation)..."
         sudo nmcli connection modify "$CON" ipv4.method auto || log "Failed to modify $CON"
-        sudo nmcli connection up "$CON" || true
+        # Not reactivating here: on a camera network with no DHCP server, bringing
+        # the connection up with method=auto would time out ("IP config could not
+        # be reserved"). The reverted setting takes effect on the next boot/replug.
     else
         log "No link-local connection found for $INTERFACE_NAME; nothing to revert."
     fi
