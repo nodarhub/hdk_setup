@@ -15,8 +15,8 @@ The HDK comes with pre-setup software and system configurations. The operating s
 This [repository](https://github.com/nodarhub/hdk_setup) provides automated setup for:
 
 - **Background Services** - Disables unnecessary system services (updates, indexing, diagnostics) for a stable real-time environment
-- **Network Configuration** - Multi-interface setup with jumbo frames (MTU 9000) for high-bandwidth camera streaming
-- **PTP (Precision Time Protocol)** - Sub-microsecond clock synchronization across devices (with hardware timestamping)
+- **Network Configuration** - Multi-interface setup with jumbo frames (MTU 9000) for high-bandwidth camera streaming; IPv4 link-local addressing for the camera interface on Jetson devkits
+- **PTP (Precision Time Protocol)** - Clock synchronization across devices (hardware timestamping via ptp4l on AGX Orin/OnLogic; software timestamping via ptpd on Orin Nano)
 - **External Time Sync** - PTP slave and PHC2SYS for synchronizing to an external PTP grandmaster (OnLogic only, opt-in)
 - **Clock Optimization** - Jetson CPU/GPU clock maximization for real-time processing
 - **DHCP Server** - Automatic IP assignment for connected cameras
@@ -27,6 +27,8 @@ This [repository](https://github.com/nodarhub/hdk_setup) provides automated setu
 hdk_setup/
 ├── install.sh           # Main installation script
 ├── uninstall.sh         # Main uninstallation script
+├── lib/                 # Shared helpers (USB Ethernet interface detection)
+│   └── net_detect.sh
 ├── background_services/ # Disable unnecessary system services
 │   └── disable_background_services.sh
 ├── clock/               # Jetson clock optimization
@@ -36,6 +38,9 @@ hdk_setup/
 │   ├── install.sh
 │   └── uninstall.sh
 ├── mtu/                 # MTU (jumbo frames) configuration
+│   ├── install.sh
+│   └── uninstall.sh
+├── link_local/          # IPv4 link-local for the Jetson camera interface
 │   ├── install.sh
 │   └── uninstall.sh
 ├── network/             # OnLogic network & DHCP setup
@@ -49,7 +54,10 @@ hdk_setup/
 │           ├── 01-ethLAN1.yaml
 │           ├── 10-camera.yaml
 │           └── 01-l4tbr0.yaml
-├── ptp/                 # Linux PTP master setup
+├── ptp/                 # Linux PTP (ptp4l) master setup — AGX Orin & OnLogic
+│   ├── install.sh
+│   └── uninstall.sh
+├── ptpd/                # ptpd master setup — Orin Nano (software timestamping)
 │   ├── install.sh
 │   └── uninstall.sh
 ├── ptp_slave/           # Linux PTP slave setup (external time sync)
@@ -74,7 +82,19 @@ hdk_setup/
 ./install.sh -d orin-nano
 ```
 
-This uses `enP8p1s0` as the camera/PTP interface and nvpmodel mode `2` (MAXN SUPER).
+The camera uplink on the Orin Nano is a USB-to-Ethernet adapter (e.g. UGREEN), whose interface name is MAC-derived and not fixed. The installer **autodetects** it (by finding the USB-attached Ethernet interface) and asks you to confirm:
+
+```
+Detected USB Ethernet adapter 'enx6c1ff7171c1e'. Press Enter to use it, or type another interface name:
+```
+
+Press Enter to accept, or type a different name. If several USB adapters are present you'll get a numbered list to pick from. To skip the prompt entirely (or for non-interactive installs), pass the interface explicitly:
+
+```bash
+./install.sh -d orin-nano -cam_if enx6c1ff7171c1e
+```
+
+This uses nvpmodel mode `2` (MAXN SUPER). Because the adapter has no PTP hardware clock, PTP runs via `ptpd` (software timestamping) instead of `ptp4l`.
 
 ### OnLogic Devices
 
@@ -122,6 +142,7 @@ The `-autostart` flag is `false` by default.
 | `-d` | Yes | — | Device type: `jetson` (AGX Orin), `orin-nano`, or `onlogic` |
 | `-cam_if1` | No | `ethLAN2` | First camera interface (OnLogic) |
 | `-cam_if2` | No | `ethLAN3` | Second camera interface (OnLogic) |
+| `-cam_if` | No | `eth0` (jetson) / autodetected USB adapter (orin-nano) | Camera/PTP interface for Jetson boards. On Orin Nano, overrides autodetection of the USB-to-Ethernet adapter |
 | `-power-mode` | No | `0` (jetson) / `2` (orin-nano) | nvpmodel index of the max-performance profile |
 | `-autostart` | No | `false` | Enable Hammerhead autostart service |
 | `-external-time-sync` | No | `false` | Enable external PTP time sync (OnLogic only) |
@@ -135,6 +156,8 @@ The `-autostart` flag is `false` by default.
 ./uninstall.sh -d jetson
 ./uninstall.sh -d orin-nano
 ```
+
+On Orin Nano the USB adapter is autodetected for MTU cleanup; if it's unplugged, pass `-cam_if <iface>` to clean up its MTU dispatcher, or ignore the skip notice (it's a safe no-op).
 
 ### OnLogic Devices
 
@@ -164,6 +187,18 @@ Configures jumbo frames (MTU 9000) for high-performance data transfer.
 - **Jetson**: Creates a NetworkManager dispatcher script to automatically apply settings when interfaces come up
 - **OnLogic**: MTU is configured via netplan in the Network module
 
+### Link-Local (Jetson only)
+
+GigE Vision cameras on the AGX Orin and Orin Nano devkits use IPv4 link-local
+(`169.254.x.x`) addressing. This module sets `ipv4.method=link-local` on the
+camera interface's NetworkManager connection so the host can reach them —
+automating what was previously a manual step in the Network settings GUI.
+
+- Applied to `eth0` (AGX Orin) or the autodetected USB adapter (Orin Nano)
+- Modifies the interface's existing NetworkManager profile; if none is bound, a
+  dedicated `hdk-camera-<iface>` profile is created
+- Not used on OnLogic, which assigns static camera addresses and runs a DHCP server
+
 ### Network (OnLogic only)
 
 Configures multi-interface network setup:
@@ -189,13 +224,23 @@ When external time sync is enabled, ethLAN4's MTU 9000 and DHCP subnet are remov
 
 Also configures ISC DHCP server with subnets for camera interfaces.
 
-### PTP Master (Both platforms)
+### PTP Master
 
-Installs and configures Linux PTP (ptp4l) for precision time synchronization:
+The device acts as the PTP master clock for the connected cameras. Two backends
+are used depending on the board's timestamping capabilities:
 
-- Operates as PTP master clock for connected cameras
+**ptp4l — AGX Orin & OnLogic** (`ptp/`)
+
+- Linux PTP (`ptp4l`) with hardware timestamping (falls back to software if unavailable)
 - Uses E2E (End-to-End) delay mechanism
 - Creates `linuxptp.service` for automatic startup and restart on failure
+
+**ptpd — Orin Nano** (`ptpd/`)
+
+- The Orin Nano's camera adapter has no PTP hardware clock, so `ptpd` is used
+  with software timestamping (`preset=masteronly`)
+- Same E2E delay mechanism and announce/sync intervals as the ptp4l config
+- Generates `/etc/ptpd/ptpd.conf` and creates `ptpd.service` for automatic startup and restart on failure
 
 ### PTP Slave (OnLogic only, opt-in)
 
@@ -260,7 +305,8 @@ sudo journalctl -u hammerhead -f
 
 ## Services Installed
 
-- `linuxptp.service` - PTP master clock synchronization (both platforms)
+- `linuxptp.service` - PTP master clock synchronization via ptp4l (AGX Orin, OnLogic)
+- `ptpd.service` - PTP master clock synchronization via ptpd (Orin Nano)
 - `linuxptp-slave.service` - PTP slave clock synchronization (OnLogic, when `-external-time-sync true`)
 - `phc2sys.service` - PHC to system clock sync (OnLogic, when `-external-time-sync true`)
 - `clocks.service` - Clock maximization at startup (both platforms)
