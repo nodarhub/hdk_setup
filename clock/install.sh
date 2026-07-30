@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Clock service installation script (Jetson clocks)
-# Usage: ./install.sh [-power-mode <n>]
+# Usage: ./install.sh [-power-mode <n>] [-fan <true|false>]
 #
 # The nvpmodel index of the maximum performance profile is board specific:
 #   AGX Orin  -> 0 (MAXN)
@@ -15,15 +15,20 @@ log() {
 
 # Parse arguments
 POWER_MODE="0"
+FAN_MAX="false"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -power-mode)
       POWER_MODE="$2"
       shift 2
       ;;
+    -fan)
+      FAN_MAX="$2"
+      shift 2
+      ;;
     *)
       echo "Error: Unknown option '$1'"
-      echo "Usage: $0 [-power-mode <n>]"
+      echo "Usage: $0 [-power-mode <n>] [-fan <true|false>]"
       exit 1
       ;;
   esac
@@ -31,6 +36,11 @@ done
 
 if ! [[ "$POWER_MODE" =~ ^[0-9]+$ ]]; then
   echo "Error: -power-mode must be a non-negative integer, got '$POWER_MODE'."
+  exit 1
+fi
+
+if [[ "$FAN_MAX" != "true" && "$FAN_MAX" != "false" ]]; then
+  echo "Error: -fan must be true or false, got '$FAN_MAX'."
   exit 1
 fi
 
@@ -130,13 +140,21 @@ sudo chmod +x "$CLOCKS_SCRIPT"
 
 # Create the main service file
 log "Creating main clocks service file at $SERVICE_FILE..."
+# With -fan true, stop nvfancontrol first (it would otherwise override the fan
+# back to its thermal curve) and pin clocks + fan to maximum.
+if [ "$FAN_MAX" == "true" ]; then
+  CLOCKS_EXEC="ExecStartPre=-/usr/bin/systemctl stop nvfancontrol
+ExecStart=/usr/local/bin/clocks.sh --max --fan"
+else
+  CLOCKS_EXEC="ExecStart=/usr/local/bin/clocks.sh --max"
+fi
 SERVICE_FILE_CONTENT="[Unit]
 Description=Set Jetson Clocks to Max or Restore
 After=multi-user.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/clocks.sh --max
+$CLOCKS_EXEC
 RemainAfterExit=yes
 
 [Install]

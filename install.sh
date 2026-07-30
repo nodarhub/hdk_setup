@@ -217,9 +217,14 @@ else
   "$SCRIPT_DIR/ptp/install.sh" -i "$CAMERA_INTERFACE"
 fi
 
-# Step 7: Clock Setup
+# Step 7: Clock Setup. Orin Nano also pins the fan to max (it runs hotter under
+# sustained max clocks); AGX/OnLogic keep dynamic fan control.
 log "[7/8] Setting up clock service (nvpmodel mode $POWER_MODE)..."
-"$SCRIPT_DIR/clock/install.sh" -power-mode "$POWER_MODE"
+if [ "$DEVICE_TYPE" == "orin-nano" ]; then
+  "$SCRIPT_DIR/clock/install.sh" -power-mode "$POWER_MODE" -fan true
+else
+  "$SCRIPT_DIR/clock/install.sh" -power-mode "$POWER_MODE"
+fi
 
 # Step 8: Hammerhead Autostart (optional)
 if [ "$INSTALL_AUTOSTART" == "true" ]; then

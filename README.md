@@ -269,6 +269,9 @@ Maximizes CPU/GPU clocks for optimal real-time performance:
 - Sets maximum power profile (`nvpmodel -m <mode>`; mode `0` = MAXN on AGX Orin, mode `2` = MAXN SUPER on Orin Nano, override with `-power-mode`)
 - Runs `jetson_clocks` for maximum CPU, GPU, and EMC (memory) frequencies
 - Maximizes VIC (Video Image Compositor) frequency if available
+- **Orin Nano only:** pins the fan to maximum (stops `nvfancontrol`, which would
+  otherwise return the fan to its dynamic thermal curve), since the Nano runs
+  hotter under sustained max clocks. AGX Orin / OnLogic keep dynamic fan control.
 - Automatically restores default clocks on shutdown
 
 ### Hammerhead Autostart (Optional)
