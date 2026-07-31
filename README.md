@@ -15,7 +15,7 @@ The HDK comes with pre-setup software and system configurations. The operating s
 This [repository](https://github.com/nodarhub/hdk_setup) provides automated setup for:
 
 - **Background Services** - Disables unnecessary system services (updates, indexing, diagnostics) for a stable real-time environment
-- **Network Configuration** - Multi-interface setup with jumbo frames (MTU 9000) for high-bandwidth camera streaming; IPv4 link-local addressing for the camera interface on Jetson devkits
+- **Network Configuration** - Multi-interface setup with jumbo frames (MTU 9000) for high-bandwidth camera streaming (OnLogic and AGX Orin); IPv4 link-local addressing for the camera interface on Jetson devkits
 - **PTP (Precision Time Protocol)** - Clock synchronization across devices (hardware timestamping via ptp4l on AGX Orin/OnLogic; software timestamping via ptpd on Orin Nano)
 - **External Time Sync** - PTP slave and PHC2SYS for synchronizing to an external PTP grandmaster (OnLogic only, opt-in)
 - **Clock Optimization** - Jetson CPU/GPU clock maximization for real-time processing
@@ -157,7 +157,7 @@ The `-autostart` flag is `false` by default.
 ./uninstall.sh -d orin-nano
 ```
 
-On Orin Nano the USB adapter is autodetected for MTU cleanup; if it's unplugged, pass `-cam_if <iface>` to clean up its MTU dispatcher, or ignore the skip notice (it's a safe no-op).
+On Orin Nano the USB adapter is autodetected for link-local cleanup; if it's unplugged, pass `-cam_if <iface>` to clean it up, or ignore the skip notice (it's a safe no-op).
 
 ### OnLogic Devices
 
@@ -184,7 +184,8 @@ Also removes cached update notifications and suppresses future release upgrade p
 
 Configures jumbo frames (MTU 9000) for high-performance data transfer.
 
-- **Jetson**: Creates a NetworkManager dispatcher script to automatically apply settings when interfaces come up
+- **AGX Orin**: Creates a NetworkManager dispatcher script to automatically apply settings when interfaces come up
+- **Orin Nano**: Not configured — the USB-to-Ethernet adapter is unreliable at MTU 9000, so the camera interface stays at the default MTU
 - **OnLogic**: MTU is configured via netplan in the Network module
 
 ### Link-Local (Jetson only)

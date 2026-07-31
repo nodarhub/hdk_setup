@@ -169,11 +169,15 @@ log "=========================================="
 log "[1/8] Disabling background services..."
 "$SCRIPT_DIR/background_services/disable_background_services.sh"
 
-# Step 2: Camera interface setup (Jetson only): MTU + IPv4 link-local.
-# OnLogic handles both via netplan in the network step.
-if [ "$DEVICE_TYPE" != "onlogic" ]; then
+# Step 2: Camera interface setup (Jetson only): IPv4 link-local, plus MTU 9000
+# on AGX Orin. The Orin Nano's USB adapter is unreliable at 9000, so it stays
+# at the default MTU. OnLogic handles both via netplan in the network step.
+if [ "$DEVICE_TYPE" == "jetson" ]; then
   log "[2/8] Configuring camera interface $CAMERA_INTERFACE (MTU 9000 + IPv4 link-local)..."
   "$SCRIPT_DIR/mtu/install.sh" "$CAMERA_INTERFACE"
+  "$SCRIPT_DIR/link_local/install.sh" "$CAMERA_INTERFACE"
+elif [ "$DEVICE_TYPE" == "orin-nano" ]; then
+  log "[2/8] Configuring camera interface $CAMERA_INTERFACE (IPv4 link-local; default MTU)..."
   "$SCRIPT_DIR/link_local/install.sh" "$CAMERA_INTERFACE"
 else
   log "[2/8] Camera interface setup deferred to network step (OnLogic - netplan + DHCP)"

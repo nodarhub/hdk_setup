@@ -117,15 +117,18 @@ else
   log "[6/7] Skipping network uninstall (Jetson)"
 fi
 
-# Step 7: Camera interface uninstall (Jetson only): MTU + IPv4 link-local.
-# OnLogic MTU/addressing is handled via netplan in the network uninstall step.
+# Step 7: Camera interface uninstall (Jetson only): IPv4 link-local, plus MTU on
+# AGX Orin (the Orin Nano never sets MTU 9000). OnLogic MTU/addressing is handled
+# via netplan in the network uninstall step.
 if [ "$DEVICE_TYPE" == "onlogic" ]; then
   log "[7/7] Camera interface cleanup handled in network step (OnLogic - netplan)"
 elif [ -z "$CAMERA_INTERFACE" ]; then
   log "[7/7] Skipping camera interface uninstall (no USB Ethernet adapter detected; pass -cam_if <iface> to clean it up)"
 else
   log "[7/7] Uninstalling camera interface config for $CAMERA_INTERFACE..."
-  "$SCRIPT_DIR/mtu/uninstall.sh" "$CAMERA_INTERFACE" || log "MTU uninstall completed with warnings"
+  if [ "$DEVICE_TYPE" == "jetson" ]; then
+    "$SCRIPT_DIR/mtu/uninstall.sh" "$CAMERA_INTERFACE" || log "MTU uninstall completed with warnings"
+  fi
   "$SCRIPT_DIR/link_local/uninstall.sh" "$CAMERA_INTERFACE" || log "Link-local uninstall completed with warnings"
 fi
 
