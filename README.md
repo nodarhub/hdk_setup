@@ -317,3 +317,32 @@ sudo journalctl -u hammerhead -f
 - `clocks-restore.service` - Clock restoration on shutdown (both platforms)
 - `isc-dhcp-server` - DHCP server for camera networks (OnLogic)
 - `hammerhead.service` - Hammerhead autostart (optional, both platforms)
+
+## Troubleshooting
+
+### Orin Nano hangs on boot with the USB Ethernet adapter plugged in
+
+**Symptom:** With the USB-to-Ethernet adapter connected, the Orin Nano stalls
+during boot showing `Start HTTP Boot over IPv4` / `IPv6` (or the `Start PXE over
+IPv4` / `IPv6` equivalents). Unplugging the adapter and booting works fine.
+
+**Cause:** When the USB adapter is present, UEFI enumerates it as a new network
+device and adds HTTP/PXE network-boot entries to the boot order. By default the
+Jetson firmware inserts newly discovered devices at the **top** of the boot
+order, so the firmware tries (and waits on) network boot before reaching the SD
+card / NVMe.
+
+**Fix (do both):**
+
+1. **Stop new devices from jumping to the top of the boot order.** In UEFI
+   setup: `Device Manager` → `NVIDIA Configuration` → `Boot Configuration` →
+   set **"Add new devices to top or bottom of boot order"** to **bottom**.
+   This keeps future network-boot entries below your OS disks.
+
+2. **Move the OS disk to the top of the current boot order.** In UEFI setup:
+   `Boot Maintenance Manager` → `Boot Options` → `Change Boot Order`, and put
+   the SD card (`UEFI SD Device`) and/or NVMe (`UEFI <drive name>`) ahead of the
+   `UEFI PXEv4/PXEv6/HTTPv4/HTTPv6` entries.
+
+After step 1 the network-boot entries stop reappearing above the disks on
+subsequent boots, so the hang does not return when the adapter is replugged.
