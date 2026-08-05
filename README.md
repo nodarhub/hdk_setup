@@ -7,6 +7,7 @@ The HDK comes with pre-setup software and system configurations. The operating s
 ## Supported Platforms
 
 - **NVIDIA Jetson Orin AGX** - Embedded GPU computing device
+- **NVIDIA Jetson Orin Nano** - Entry-level embedded GPU computing device
 - **OnLogic with Orin AGX** - Industrial edge computing platform
 
 ## Overview
@@ -14,8 +15,8 @@ The HDK comes with pre-setup software and system configurations. The operating s
 This [repository](https://github.com/nodarhub/hdk_setup) provides automated setup for:
 
 - **Background Services** - Disables unnecessary system services (updates, indexing, diagnostics) for a stable real-time environment
-- **Network Configuration** - Multi-interface setup with jumbo frames (MTU 9000) for high-bandwidth camera streaming
-- **PTP (Precision Time Protocol)** - Sub-microsecond clock synchronization across devices (with hardware timestamping)
+- **Network Configuration** - Multi-interface setup with jumbo frames (MTU 9000) for high-bandwidth camera streaming (OnLogic and AGX Orin); IPv4 link-local addressing for the camera interface on Jetson devkits
+- **PTP (Precision Time Protocol)** - Clock synchronization across devices (hardware timestamping via ptp4l on AGX Orin/OnLogic; software timestamping via ptpd on Orin Nano)
 - **External Time Sync** - PTP slave and PHC2SYS for synchronizing to an external PTP grandmaster (OnLogic only, opt-in)
 - **Clock Optimization** - Jetson CPU/GPU clock maximization for real-time processing
 - **DHCP Server** - Automatic IP assignment for connected cameras
@@ -26,6 +27,8 @@ This [repository](https://github.com/nodarhub/hdk_setup) provides automated setu
 hdk_setup/
 ├── install.sh           # Main installation script
 ├── uninstall.sh         # Main uninstallation script
+├── lib/                 # Shared helpers (USB Ethernet interface detection)
+│   └── net_detect.sh
 ├── background_services/ # Disable unnecessary system services
 │   └── disable_background_services.sh
 ├── clock/               # Jetson clock optimization
@@ -35,6 +38,9 @@ hdk_setup/
 │   ├── install.sh
 │   └── uninstall.sh
 ├── mtu/                 # MTU (jumbo frames) configuration
+│   ├── install.sh
+│   └── uninstall.sh
+├── link_local/          # IPv4 link-local for the Jetson camera interface
 │   ├── install.sh
 │   └── uninstall.sh
 ├── network/             # OnLogic network & DHCP setup
@@ -48,7 +54,10 @@ hdk_setup/
 │           ├── 01-ethLAN1.yaml
 │           ├── 10-camera.yaml
 │           └── 01-l4tbr0.yaml
-├── ptp/                 # Linux PTP master setup
+├── ptp/                 # Linux PTP (ptp4l) master setup — AGX Orin & OnLogic
+│   ├── install.sh
+│   └── uninstall.sh
+├── ptpd/                # ptpd master setup — Orin Nano (software timestamping)
 │   ├── install.sh
 │   └── uninstall.sh
 ├── ptp_slave/           # Linux PTP slave setup (external time sync)
@@ -61,11 +70,31 @@ hdk_setup/
 
 ## Installation
 
-### Jetson Devices
+### Jetson AGX Orin
 
 ```bash
 ./install.sh -d jetson
 ```
+
+### Jetson Orin Nano
+
+```bash
+./install.sh -d orin-nano
+```
+
+The camera uplink on the Orin Nano is a USB-to-Ethernet adapter (e.g. UGREEN), whose interface name is MAC-derived and not fixed. The installer **autodetects** it (by finding the USB-attached Ethernet interface) and asks you to confirm:
+
+```
+Detected USB Ethernet adapter 'enx6c1ff7171c1e'. Press Enter to use it, or type another interface name:
+```
+
+Press Enter to accept, or type a different name. If several USB adapters are present you'll get a numbered list to pick from. To skip the prompt entirely (or for non-interactive installs), pass the interface explicitly:
+
+```bash
+./install.sh -d orin-nano -cam_if enx6c1ff7171c1e
+```
+
+This uses nvpmodel mode `2` (MAXN SUPER). Because the adapter has no PTP hardware clock, PTP runs via `ptpd` (software timestamping) instead of `ptp4l`.
 
 ### OnLogic Devices
 
@@ -110,9 +139,11 @@ The `-autostart` flag is `false` by default.
 
 | Flag | Required | Default | Description |
 |------|----------|---------|-------------|
-| `-d` | Yes | — | Device type: `jetson` or `onlogic` |
+| `-d` | Yes | — | Device type: `jetson` (AGX Orin), `orin-nano`, or `onlogic` |
 | `-cam_if1` | No | `ethLAN2` | First camera interface (OnLogic) |
 | `-cam_if2` | No | `ethLAN3` | Second camera interface (OnLogic) |
+| `-cam_if` | No | `eth0` (jetson) / autodetected USB adapter (orin-nano) | Camera/PTP interface for Jetson boards. On Orin Nano, overrides autodetection of the USB-to-Ethernet adapter |
+| `-power-mode` | No | `0` (jetson) / `2` (orin-nano) | nvpmodel index of the max-performance profile |
 | `-autostart` | No | `false` | Enable Hammerhead autostart service |
 | `-external-time-sync` | No | `false` | Enable external PTP time sync (OnLogic only) |
 | `-sync-ip` | No | `192.168.30.25/24` | IP/CIDR for ethLAN4 when external time sync is enabled |
@@ -123,7 +154,10 @@ The `-autostart` flag is `false` by default.
 
 ```bash
 ./uninstall.sh -d jetson
+./uninstall.sh -d orin-nano
 ```
+
+On Orin Nano the USB adapter is autodetected for link-local cleanup; if it's unplugged, pass `-cam_if <iface>` to clean it up, or ignore the skip notice (it's a safe no-op).
 
 ### OnLogic Devices
 
@@ -150,8 +184,21 @@ Also removes cached update notifications and suppresses future release upgrade p
 
 Configures jumbo frames (MTU 9000) for high-performance data transfer.
 
-- **Jetson**: Creates a NetworkManager dispatcher script to automatically apply settings when interfaces come up
+- **AGX Orin**: Creates a NetworkManager dispatcher script to automatically apply settings when interfaces come up
+- **Orin Nano**: Not configured — the USB-to-Ethernet adapter is unreliable at MTU 9000, so the camera interface stays at the default MTU
 - **OnLogic**: MTU is configured via netplan in the Network module
+
+### Link-Local (Jetson only)
+
+GigE Vision cameras on the AGX Orin and Orin Nano devkits use IPv4 link-local
+(`169.254.x.x`) addressing. This module sets `ipv4.method=link-local` on the
+camera interface's NetworkManager connection so the host can reach them —
+automating what was previously a manual step in the Network settings GUI.
+
+- Applied to `eth0` (AGX Orin) or the autodetected USB adapter (Orin Nano)
+- Modifies the interface's existing NetworkManager profile; if none is bound, a
+  dedicated `hdk-camera-<iface>` profile is created
+- Not used on OnLogic, which assigns static camera addresses and runs a DHCP server
 
 ### Network (OnLogic only)
 
@@ -178,13 +225,23 @@ When external time sync is enabled, ethLAN4's MTU 9000 and DHCP subnet are remov
 
 Also configures ISC DHCP server with subnets for camera interfaces.
 
-### PTP Master (Both platforms)
+### PTP Master
 
-Installs and configures Linux PTP (ptp4l) for precision time synchronization:
+The device acts as the PTP master clock for the connected cameras. Two backends
+are used depending on the board's timestamping capabilities:
 
-- Operates as PTP master clock for connected cameras
+**ptp4l — AGX Orin & OnLogic** (`ptp/`)
+
+- Linux PTP (`ptp4l`) with hardware timestamping (falls back to software if unavailable)
 - Uses E2E (End-to-End) delay mechanism
 - Creates `linuxptp.service` for automatic startup and restart on failure
+
+**ptpd — Orin Nano** (`ptpd/`)
+
+- The Orin Nano's camera adapter has no PTP hardware clock, so `ptpd` is used
+  with software timestamping (`preset=masteronly`)
+- Same E2E delay mechanism and announce/sync intervals as the ptp4l config
+- Generates `/etc/ptpd/ptpd.conf` and creates `ptpd.service` for automatic startup and restart on failure
 
 ### PTP Slave (OnLogic only, opt-in)
 
@@ -210,9 +267,12 @@ Synchronizes the system clock from the PTP hardware clock. Only installed when `
 
 Maximizes CPU/GPU clocks for optimal real-time performance:
 
-- Sets maximum power profile (`nvpmodel -m 0`)
+- Sets maximum power profile (`nvpmodel -m <mode>`; mode `0` = MAXN on AGX Orin, mode `2` = MAXN SUPER on Orin Nano, override with `-power-mode`)
 - Runs `jetson_clocks` for maximum CPU, GPU, and EMC (memory) frequencies
 - Maximizes VIC (Video Image Compositor) frequency if available
+- **Orin Nano only:** pins the fan to maximum (stops `nvfancontrol`, which would
+  otherwise return the fan to its dynamic thermal curve), since the Nano runs
+  hotter under sustained max clocks. AGX Orin / OnLogic keep dynamic fan control.
 - Automatically restores default clocks on shutdown
 
 ### Hammerhead Autostart (Optional)
@@ -244,15 +304,45 @@ sudo journalctl -u hammerhead -f
 
 - Linux (Ubuntu/Debian-based)
 - sudo privileges (scripts invoke sudo internally as needed)
-- For Jetson: NVIDIA Jetson Orin AGX with JetPack
+- For Jetson: NVIDIA Jetson Orin AGX or Orin Nano with JetPack
 - For OnLogic: OnLogic with Orin AGX and multiple Ethernet interfaces
 
 ## Services Installed
 
-- `linuxptp.service` - PTP master clock synchronization (both platforms)
+- `linuxptp.service` - PTP master clock synchronization via ptp4l (AGX Orin, OnLogic)
+- `ptpd.service` - PTP master clock synchronization via ptpd (Orin Nano)
 - `linuxptp-slave.service` - PTP slave clock synchronization (OnLogic, when `-external-time-sync true`)
 - `phc2sys.service` - PHC to system clock sync (OnLogic, when `-external-time-sync true`)
 - `clocks.service` - Clock maximization at startup (both platforms)
 - `clocks-restore.service` - Clock restoration on shutdown (both platforms)
 - `isc-dhcp-server` - DHCP server for camera networks (OnLogic)
 - `hammerhead.service` - Hammerhead autostart (optional, both platforms)
+
+## Troubleshooting
+
+### Orin Nano hangs on boot with the USB Ethernet adapter plugged in
+
+**Symptom:** With the USB-to-Ethernet adapter connected, the Orin Nano stalls
+during boot showing `Start HTTP Boot over IPv4` / `IPv6` (or the `Start PXE over
+IPv4` / `IPv6` equivalents). Unplugging the adapter and booting works fine.
+
+**Cause:** When the USB adapter is present, UEFI enumerates it as a new network
+device and adds HTTP/PXE network-boot entries to the boot order. By default the
+Jetson firmware inserts newly discovered devices at the **top** of the boot
+order, so the firmware tries (and waits on) network boot before reaching the SD
+card / NVMe.
+
+**Fix (do both):**
+
+1. **Stop new devices from jumping to the top of the boot order.** In UEFI
+   setup: `Device Manager` → `NVIDIA Configuration` → `Boot Configuration` →
+   set **"Add new devices to top or bottom of boot order"** to **bottom**.
+   This keeps future network-boot entries below your OS disks.
+
+2. **Move the OS disk to the top of the current boot order.** In UEFI setup:
+   `Boot Maintenance Manager` → `Boot Options` → `Change Boot Order`, and put
+   the SD card (`UEFI SD Device`) and/or NVMe (`UEFI <drive name>`) ahead of the
+   `UEFI PXEv4/PXEv6/HTTPv4/HTTPv6` entries.
+
+After step 1 the network-boot entries stop reappearing above the disks on
+subsequent boots, so the hang does not return when the adapter is replugged.
