@@ -20,3 +20,27 @@ detect_usb_ethernet() {
     fi
   done
 }
+
+# Print the USB port an interface is attached to (e.g. "2-1.1"), empty if none.
+usb_port_path() {
+  local d
+  d="$(readlink -f "/sys/class/net/$1/device" 2>/dev/null || true)"
+  while [ -n "$d" ] && [ "$d" != "/" ]; do
+    [ -f "$d/idVendor" ] && { basename "$d"; return 0; }
+    d="$(dirname "$d")"
+  done
+}
+
+# Describe where an adapter is plugged in. On the Orin Nano devkit the four
+# Type-A sockets sit behind an on-board hub (ports like 2-1.1) while the Type-C
+# socket is a direct root port (2-2), so hub depth is a reliable hint there.
+# It is only a hint: an external hub or a different carrier board breaks it.
+usb_port_hint() {
+  local port
+  port="$(usb_port_path "$1")"
+  case "$port" in
+    "")  echo "unknown port" ;;
+    *.*) echo "port $port, behind hub - likely USB-A" ;;
+    *)   echo "port $port, direct root port - likely USB-C" ;;
+  esac
+}

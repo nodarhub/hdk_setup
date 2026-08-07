@@ -44,17 +44,17 @@ if [ -n "$CONFLICT" ]; then
     log "Warning: ${SUBNET_PREFIX}0/24 is already in use on: $(echo "$CONFLICT" | tr '\n' ' ')"
 fi
 
-log "Configuring static IPv4 $DATA_IP for $INTERFACE_NAME (default route via $DATA_GW, metric $DATA_METRIC)..."
-
-# Modify the profile already bound to the device; create one only if none is.
+# Reconfigure the profile NetworkManager already bound to the device; this
+# module never creates a profile of its own.
 CON="$(nmcli -g GENERAL.CONNECTION device show "$INTERFACE_NAME" 2>/dev/null || true)"
-if [ -n "$CON" ] && [ "$CON" != "--" ]; then
-    log "Setting static IPv4 on existing connection '$CON'."
-else
-    CON="hdk-data-$INTERFACE_NAME"
-    log "No active profile bound to $INTERFACE_NAME; creating '$CON'."
-    sudo nmcli connection add type ethernet ifname "$INTERFACE_NAME" con-name "$CON"
+if [ -z "$CON" ] || [ "$CON" == "--" ]; then
+    echo "Error: No NetworkManager profile is bound to '$INTERFACE_NAME'."
+    echo "Check 'nmcli device status' - the adapter must be plugged in and managed"
+    echo "by NetworkManager so there is a profile to reconfigure."
+    exit 1
 fi
+
+log "Configuring $INTERFACE_NAME as $DATA_IP via $DATA_GW (metric $DATA_METRIC) on connection '$CON'..."
 
 sudo nmcli connection modify "$CON" \
     ipv4.method manual \

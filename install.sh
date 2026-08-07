@@ -32,6 +32,8 @@ POWER_MODE=""
 # Optional second USB adapter on the Orin Nano (data-out uplink). Its addressing
 # is fixed in data_out/install.sh.
 DATA_OUT_INTERFACE=""
+# Data-out adapter from a previous install, if the selection has changed.
+PREV_DATA_OUT_INTERFACE=""
 # Records which USB adapter got which role, for uninstall.
 IFACE_STATE_FILE="/etc/hdk/interfaces.conf"
 
@@ -132,6 +134,19 @@ resolve_orin_nano_interfaces() {
     candidates=("${filtered[@]}")
   fi
 
+  # List hub-attached adapters (the devkit's Type-A sockets) first, so the
+  # camera default lands on a USB-A adapter rather than on name order.
+  if [ "${#candidates[@]}" -gt 1 ]; then
+    local hubbed=() direct=()
+    for i in "${candidates[@]}"; do
+      case "$(usb_port_path "$i")" in
+        *.*) hubbed+=("$i") ;;
+        *)   direct+=("$i") ;;
+      esac
+    done
+    candidates=("${hubbed[@]}" "${direct[@]}")
+  fi
+
   if [ -n "$CAMERA_INTERFACE" ]; then
     : # explicit -cam_if wins
   elif [ "${#candidates[@]}" -eq 0 ]; then
@@ -150,7 +165,7 @@ resolve_orin_nano_interfaces() {
   else
     log "Multiple USB Ethernet adapters detected:"
     for i in "${!candidates[@]}"; do
-      log "    $((i + 1))) ${candidates[$i]}"
+      log "    $((i + 1))) ${candidates[$i]}  [$(usb_port_hint "${candidates[$i]}")]"
     done
     if [ -e /dev/tty ]; then
       read -rp "Select the CAMERA (data-in) interface [1-${#candidates[@]}] or type an interface name (Enter for 1): " reply </dev/tty || true
@@ -180,7 +195,7 @@ resolve_orin_nano_interfaces() {
       if [ -e /dev/tty ]; then
         log "Spare USB Ethernet adapter(s) available for data-out:"
         for i in "${!remaining[@]}"; do
-          log "    $((i + 1))) ${remaining[$i]}"
+          log "    $((i + 1))) ${remaining[$i]}  [$(usb_port_hint "${remaining[$i]}")]"
         done
         reply=""
         read -rp "Select the DATA-OUT interface [1-${#remaining[@]}] or type an interface name (Enter to skip): " reply </dev/tty || true
@@ -216,6 +231,10 @@ if [[ "$DEVICE_TYPE" == "jetson" ]]; then
   CAMERA_INTERFACE="${CAMERA_INTERFACE:-eth0}"
   POWER_MODE="${POWER_MODE:-0}"
 elif [[ "$DEVICE_TYPE" == "orin-nano" ]]; then
+  # Read before write_interface_state overwrites it.
+  if [ -f "$IFACE_STATE_FILE" ]; then
+    PREV_DATA_OUT_INTERFACE="$(grep -m1 '^DATA_OUT_INTERFACE=' "$IFACE_STATE_FILE" | cut -d= -f2- || true)"
+  fi
   resolve_orin_nano_interfaces
   POWER_MODE="${POWER_MODE:-2}"
   log "Orin Nano camera interface: $CAMERA_INTERFACE"
@@ -253,7 +272,13 @@ else
   log "[2/9] Camera interface setup deferred to network step (OnLogic - netplan + DHCP)"
 fi
 
-# Step 3: Data-out interface (Orin Nano only, optional second USB adapter)
+# Step 3: Data-out interface (Orin Nano only, optional second USB adapter).
+# A changed selection reverts the previous adapter first, otherwise it would keep
+# the same static address and collide with the new one.
+if [ -n "$PREV_DATA_OUT_INTERFACE" ] && [ "$PREV_DATA_OUT_INTERFACE" != "$DATA_OUT_INTERFACE" ]; then
+  log "[3/9] Data-out adapter changed; reverting $PREV_DATA_OUT_INTERFACE first..."
+  "$SCRIPT_DIR/data_out/uninstall.sh" "$PREV_DATA_OUT_INTERFACE" || log "Reverting $PREV_DATA_OUT_INTERFACE completed with warnings"
+fi
 if [ "$DEVICE_TYPE" == "orin-nano" ] && [ -n "$DATA_OUT_INTERFACE" ]; then
   log "[3/9] Configuring data-out interface $DATA_OUT_INTERFACE (static 10.10.1.10/24)..."
   "$SCRIPT_DIR/data_out/install.sh" "$DATA_OUT_INTERFACE"

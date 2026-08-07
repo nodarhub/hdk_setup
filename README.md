@@ -107,13 +107,21 @@ When a spare USB adapter is detected, the installer asks which one to use after 
 
 ```
 Multiple USB Ethernet adapters detected:
-    1) enx6c1ff7171c1e
-    2) enx00e04c680001
+    1) enx6c1ff7171c1e  [port 2-1.1, behind hub - likely USB-A]
+    2) enx6c1ff7cbef8a  [port 2-2, direct root port - likely USB-C]
 Select the CAMERA (data-in) interface [1-2] or type an interface name (Enter for 1): 1
 Spare USB Ethernet adapter(s) available for data-out:
-    1) enx00e04c680001
+    1) enx6c1ff7cbef8a  [port 2-2, direct root port - likely USB-C]
 Select the DATA-OUT interface [1-1] or type an interface name (Enter to skip):
 ```
+
+Two identical adapters (e.g. two UGREEN 2.5G units) report the same USB vendor
+and product IDs, so the only automatic hint is where each one is plugged in: on
+the Orin Nano devkit the four Type-A sockets sit behind an on-board hub (ports
+`2-1.x`) while the Type-C socket is a direct root port (`2-2`). Hub-attached
+adapters are listed first so the Enter default picks the USB-A camera adapter.
+**Treat the hint as a hint** — an external hub or a different carrier board can
+invert it, so check the port against what you actually plugged in.
 
 Press Enter to skip data-out setup. For non-interactive installs, pass both interfaces explicitly (data-out is skipped when there is no terminal and no `-data_if`):
 
@@ -244,8 +252,9 @@ hijack normal outbound traffic. The values are fixed in `data_out/install.sh`.
 
 - Opt-in: nothing is configured unless `-data_if` is passed or a spare adapter is
   selected at the prompt
-- Modifies the interface's existing NetworkManager profile; if none is bound, a
-  dedicated `hdk-data-<iface>` profile is created
+- Reconfigures the interface's existing NetworkManager profile and never creates
+  one of its own, so no extra entry shows up in `nmcli connection show`. Fails
+  with a clear message if NetworkManager has no profile bound to the adapter
 - Warns (without failing) if another interface already holds an address in
   `10.10.1.0/24`
 
