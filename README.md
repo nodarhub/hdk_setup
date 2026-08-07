@@ -103,7 +103,7 @@ This uses nvpmodel mode `2` (MAXN SUPER). Because the adapter has no PTP hardwar
 
 A second USB-to-Ethernet adapter can be used as the **data-out** uplink to the receiving computer, with the static address `10.10.1.10/24`. Optional — with a single adapter the install never asks about it.
 
-**Connect its cable first.** NetworkManager only creates a profile once the link is up, so an adapter with nothing plugged into it cannot be configured; it is flagged `NO CABLE` in the list below.
+The Ethernet cable does not have to be connected during install — settings are written to the adapter's NetworkManager profile and take effect when the cable goes in. The one exception is a brand-new adapter this machine has never seen: NetworkManager creates its profile the first time the adapter gets a link, so plug its cable in once (briefly is enough) before installing. Adapters with no cable are flagged `NO CABLE` in the list.
 
 When a spare adapter is detected, the installer asks which one to use:
 
@@ -230,8 +230,8 @@ automating what was previously a manual step in the Network settings GUI.
 - Applied to `eth0` (AGX Orin) or the autodetected USB adapter (Orin Nano)
 - Modifies the interface's existing NetworkManager profile; if none is bound, a
   dedicated `hdk-camera-<iface>` profile is created
-- Needs the camera link to be up; with no cable it stops with an explanatory
-  message rather than leaving a stale profile behind
+- Works with the cable disconnected: the profile is created or modified either
+  way, and is activated when the link comes up
 - Not used on OnLogic, which assigns static camera addresses and runs a DHCP server
 
 ### Data-Out (Orin Nano only)
@@ -243,8 +243,9 @@ gateway, IPv6 off. Give the receiving computer any other address in
 - Opt-in: nothing is configured unless `-data_if` is passed or a spare adapter is
   selected at the prompt
 - Reconfigures the adapter's existing NetworkManager profile and never creates one
-  of its own, so no extra entry appears in `nmcli connection show`. Requires the
-  link to be up, since that is when NetworkManager creates the profile
+  of its own, so no extra entry appears in `nmcli connection show`. The profile is
+  found by interface name, so the cable need not be connected — but one must exist,
+  which means the adapter has to have had a link at least once
 - Warns (without failing) if another interface already holds an address in
   `10.10.1.0/24`
 

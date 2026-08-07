@@ -9,6 +9,9 @@
 
 set -e
 
+SCRIPT_DIR="$(cd -- "$(dirname "$0")" >/dev/null 2>&1; pwd -P)"
+source "$SCRIPT_DIR/../lib/net_detect.sh"
+
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $@"
 }
@@ -42,30 +45,18 @@ if [ -n "$CONFLICT" ]; then
     log "Warning: ${SUBNET_PREFIX}0/24 is already in use on: $(echo "$CONFLICT" | tr '\n' ' ')"
 fi
 
-# Reconfigure the profile NetworkManager already bound to the device; this
-# module never creates a profile of its own. NM only binds one once the device
-# has carrier, so a missing profile usually means the cable is not connected.
-CON="$(nmcli -g GENERAL.CONNECTION device show "$INTERFACE_NAME" 2>/dev/null || true)"
-CARRIER="$(cat "/sys/class/net/$INTERFACE_NAME/carrier" 2>/dev/null || echo 0)"
-if [ -z "$CON" ] || [ "$CON" == "--" ]; then
-    if [ "$CARRIER" != "1" ]; then
-        echo "Error: '$INTERFACE_NAME' has no link, so NetworkManager has no profile for it."
-        echo "Connect the data-out cable to the receiving computer, wait for the link"
-        echo "to come up, then re-run."
-    else
-        echo "Error: No NetworkManager profile is bound to '$INTERFACE_NAME'."
-        echo "The link is up, so the device is likely unmanaged - check 'nmcli device status';"
-        echo "if it says 'unmanaged', run 'sudo nmcli device set $INTERFACE_NAME managed yes'."
-    fi
+# Reconfigure the interface's NetworkManager profile; this module never creates
+# one of its own. The profile is found even with the cable out, so the data-out
+# link does not have to be connected to run this.
+CON="$(nm_profile_uuid_for "$INTERFACE_NAME")"
+if [ -z "$CON" ]; then
+    echo "Error: NetworkManager has no profile for '$INTERFACE_NAME'."
+    echo "Connect its cable once so NetworkManager creates one (it persists afterwards),"
+    echo "or check 'nmcli device status' in case the device is unmanaged."
     exit 1
 fi
 
-# Carrier can still be down here if NetworkManager is set to ignore-carrier.
-if [ "$CARRIER" != "1" ]; then
-    log "Warning: $INTERFACE_NAME has no carrier; check the data-out cable."
-fi
-
-log "Configuring $INTERFACE_NAME as $DATA_IP (no default route) on connection '$CON'..."
+log "Configuring $INTERFACE_NAME as $DATA_IP (no default route) on connection '$(nm_profile_name "$CON")'..."
 
 sudo nmcli connection modify "$CON" \
     ipv4.method manual \
@@ -76,7 +67,11 @@ sudo nmcli connection modify "$CON" \
     ipv6.method ignore \
     connection.autoconnect yes
 
-# Re-activate so the change takes effect now
-sudo nmcli connection up "$CON"
+# Activating needs carrier; without it the profile applies when the cable goes in.
+if [ "$(cat "/sys/class/net/$INTERFACE_NAME/carrier" 2>/dev/null || echo 0)" = "1" ]; then
+    sudo nmcli connection up "$CON"
+else
+    log "No cable on $INTERFACE_NAME; settings will apply when it is connected."
+fi
 
-log "Data-out interface configured: $INTERFACE_NAME -> $DATA_IP (connection: $CON)."
+log "Data-out interface configured: $INTERFACE_NAME -> $DATA_IP (connection: $(nm_profile_name "$CON"))."

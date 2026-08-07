@@ -5,6 +5,9 @@
 
 set -e
 
+SCRIPT_DIR="$(cd -- "$(dirname "$0")" >/dev/null 2>&1; pwd -P)"
+source "$SCRIPT_DIR/../lib/net_detect.sh"
+
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $@"
 }
@@ -21,10 +24,11 @@ if ! command -v nmcli >/dev/null 2>&1; then
     exit 0
 fi
 
-# Install never creates a profile, so cleanup only reverts the bound one.
-CON="$(nmcli -g GENERAL.CONNECTION device show "$INTERFACE_NAME" 2>/dev/null || true)"
-if [ -n "$CON" ] && [ "$CON" != "--" ]; then
-    log "Reverting connection '$CON' to DHCP (applies on next activation)..."
+# Install never creates a profile, so cleanup only reverts the existing one.
+# Found by interface-name too, so the cable does not have to be connected.
+CON="$(nm_profile_uuid_for "$INTERFACE_NAME")"
+if [ -n "$CON" ]; then
+    log "Reverting connection '$(nm_profile_name "$CON")' to DHCP (applies on next activation)..."
     # Gateway first: nmcli rejects an address-less profile with a gateway.
     sudo nmcli connection modify "$CON" \
         ipv4.gateway "" \
