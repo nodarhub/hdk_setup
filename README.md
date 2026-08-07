@@ -43,6 +43,9 @@ hdk_setup/
 ├── link_local/          # IPv4 link-local for the Jetson camera interface
 │   ├── install.sh
 │   └── uninstall.sh
+├── data_out/            # Static IP for the Orin Nano data-out interface
+│   ├── install.sh
+│   └── uninstall.sh
 ├── network/             # OnLogic network & DHCP setup
 │   ├── install.sh
 │   ├── uninstall.sh
@@ -96,6 +99,30 @@ Press Enter to accept, or type a different name. If several USB adapters are pre
 
 This uses nvpmodel mode `2` (MAXN SUPER). Because the adapter has no PTP hardware clock, PTP runs via `ptpd` (software timestamping) instead of `ptp4l`.
 
+#### Optional second adapter for data-out
+
+A second USB-to-Ethernet adapter (e.g. USB-C to RJ45) can be used as the **data-out** uplink, configured with the static address `10.10.1.10/24`. This is entirely optional — with a single adapter the install behaves exactly as above and never asks about it.
+
+When a spare USB adapter is detected, the installer asks which one to use after the camera interface has been chosen:
+
+```
+Multiple USB Ethernet adapters detected:
+    1) enx6c1ff7171c1e
+    2) enx00e04c680001
+Select the CAMERA (data-in) interface [1-2] or type an interface name (Enter for 1): 1
+Spare USB Ethernet adapter(s) available for data-out:
+    1) enx00e04c680001
+Select the DATA-OUT interface [1-1] or type an interface name (Enter to skip):
+```
+
+Press Enter to skip data-out setup. For non-interactive installs, pass both interfaces explicitly (data-out is skipped when there is no terminal and no `-data_if`):
+
+```bash
+./install.sh -d orin-nano -cam_if enx6c1ff7171c1e -data_if enx00e04c680001
+```
+
+The chosen roles are recorded in `/etc/hdk/interfaces.conf` so `uninstall.sh` reverts the right adapter.
+
 ### OnLogic Devices
 
 ```bash
@@ -143,6 +170,7 @@ The `-autostart` flag is `false` by default.
 | `-cam_if1` | No | `ethLAN2` | First camera interface (OnLogic) |
 | `-cam_if2` | No | `ethLAN3` | Second camera interface (OnLogic) |
 | `-cam_if` | No | `eth0` (jetson) / autodetected USB adapter (orin-nano) | Camera/PTP interface for Jetson boards. On Orin Nano, overrides autodetection of the USB-to-Ethernet adapter |
+| `-data_if` | No | — (skipped) | Orin Nano only: second USB-to-Ethernet adapter to configure as the data-out uplink (static `10.10.1.10/24`). Optional; skipped unless given or selected at the prompt |
 | `-power-mode` | No | `0` (jetson) / `2` (orin-nano) | nvpmodel index of the max-performance profile |
 | `-autostart` | No | `false` | Enable Hammerhead autostart service |
 | `-external-time-sync` | No | `false` | Enable external PTP time sync (OnLogic only) |
@@ -157,7 +185,7 @@ The `-autostart` flag is `false` by default.
 ./uninstall.sh -d orin-nano
 ```
 
-On Orin Nano the USB adapter is autodetected for link-local cleanup; if it's unplugged, pass `-cam_if <iface>` to clean it up, or ignore the skip notice (it's a safe no-op).
+On Orin Nano the adapter roles are read back from `/etc/hdk/interfaces.conf` (written during install), so both the camera and data-out interfaces are reverted correctly. If that file is missing the camera adapter is autodetected instead; if an adapter is unplugged or was configured by an older install, pass `-cam_if <iface>` and/or `-data_if <iface>` to clean it up, or ignore the skip notice (it's a safe no-op).
 
 ### OnLogic Devices
 
@@ -199,6 +227,27 @@ automating what was previously a manual step in the Network settings GUI.
 - Modifies the interface's existing NetworkManager profile; if none is bound, a
   dedicated `hdk-camera-<iface>` profile is created
 - Not used on OnLogic, which assigns static camera addresses and runs a DHCP server
+
+### Data-Out (Orin Nano only)
+
+Configures an optional second USB-to-Ethernet adapter as the data-out uplink,
+matching what `ethLAN1` does on OnLogic:
+
+| Setting | Value |
+|---------|-------|
+| Address | `10.10.1.10/24` |
+| Default route | via `10.10.1.1`, metric `500` |
+| IPv6 | disabled |
+
+The metric keeps this route below Wi-Fi and onboard Ethernet, so it does not
+hijack normal outbound traffic. The values are fixed in `data_out/install.sh`.
+
+- Opt-in: nothing is configured unless `-data_if` is passed or a spare adapter is
+  selected at the prompt
+- Modifies the interface's existing NetworkManager profile; if none is bound, a
+  dedicated `hdk-data-<iface>` profile is created
+- Warns (without failing) if another interface already holds an address in
+  `10.10.1.0/24`
 
 ### Network (OnLogic only)
 
