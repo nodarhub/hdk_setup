@@ -165,7 +165,7 @@ resolve_orin_nano_interfaces() {
   else
     log "Multiple USB Ethernet adapters detected:"
     for i in "${!candidates[@]}"; do
-      log "    $((i + 1))) ${candidates[$i]}  [$(usb_port_hint "${candidates[$i]}")]"
+      log "    $((i + 1))) ${candidates[$i]}  [$(usb_port_hint "${candidates[$i]}")$(usb_link_note "${candidates[$i]}")]"
     done
     if [ -e /dev/tty ]; then
       read -rp "Select the CAMERA (data-in) interface [1-${#candidates[@]}] or type an interface name (Enter for 1): " reply </dev/tty || true
@@ -208,7 +208,7 @@ resolve_orin_nano_interfaces() {
       if [ -e /dev/tty ]; then
         log "Spare USB Ethernet adapter(s) available for data-out:"
         for i in "${!remaining[@]}"; do
-          log "    $((i + 1))) ${remaining[$i]}  [$(usb_port_hint "${remaining[$i]}")]"
+          log "    $((i + 1))) ${remaining[$i]}  [$(usb_port_hint "${remaining[$i]}")$(usb_link_note "${remaining[$i]}")]"
         done
         reply=""
         read -rp "Select the DATA-OUT interface [1-${#remaining[@]}], type an interface name, or 'skip' (Enter for 1): " reply </dev/tty || true

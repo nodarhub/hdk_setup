@@ -44,3 +44,9 @@ usb_port_hint() {
     *)   echo "port $port, direct root port - likely USB-C" ;;
   esac
 }
+
+# Print ", NO CABLE" when an interface has no carrier, empty otherwise. Reading
+# carrier fails on a down interface, which counts as no link.
+usb_link_note() {
+  [ "$(cat "/sys/class/net/$1/carrier" 2>/dev/null || echo 0)" = "1" ] || echo ", NO CABLE"
+}

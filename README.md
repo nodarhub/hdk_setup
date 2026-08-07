@@ -101,9 +101,11 @@ This uses nvpmodel mode `2` (MAXN SUPER). Because the adapter has no PTP hardwar
 
 #### Optional second adapter for data-out
 
-A second USB-to-Ethernet adapter (e.g. USB-C to RJ45) can be used as the **data-out** uplink, configured with the static address `10.10.1.10/24`. This is entirely optional — with a single adapter the install behaves exactly as above and never asks about it.
+A second USB-to-Ethernet adapter can be used as the **data-out** uplink to the receiving computer, with the static address `10.10.1.10/24`. Optional — with a single adapter the install never asks about it.
 
-When a spare USB adapter is detected, the installer asks which one to use after the camera interface has been chosen:
+**Connect its cable first.** NetworkManager only creates a profile once the link is up, so an adapter with nothing plugged into it cannot be configured; it is flagged `NO CABLE` in the list below.
+
+When a spare adapter is detected, the installer asks which one to use:
 
 ```
 Multiple USB Ethernet adapters detected:
@@ -115,22 +117,12 @@ Spare USB Ethernet adapter(s) available for data-out:
 Select the DATA-OUT interface [1-1], type an interface name, or 'skip' (Enter for 1):
 ```
 
-Enter accepts the default at both prompts; type `skip` (or `s`) to leave data-out
-unconfigured.
+Each prompt lists its likely answer first, so Enter twice picks the USB-A adapter for cameras and the USB-C one for data-out; type `skip` to leave data-out unconfigured. The USB-A/USB-C guess comes from the port path (the devkit's Type-A sockets sit behind a hub, the Type-C socket does not) — identical adapters are otherwise indistinguishable, so check it against what you plugged in.
 
-Two identical adapters (e.g. two UGREEN 2.5G units) report the same USB vendor
-and product IDs, so the only automatic hint is where each one is plugged in: on
-the Orin Nano devkit the four Type-A sockets sit behind an on-board hub (ports
-`2-1.x`) while the Type-C socket is a direct root port (`2-2`). Each prompt lists
-its likely answer first, so pressing Enter twice picks the USB-A adapter for
-cameras and the USB-C one for data-out.
-**Treat the hint as a hint** — an external hub or a different carrier board can
-invert it, so check the port against what you actually plugged in.
-
-For non-interactive installs, pass both interfaces explicitly (data-out is skipped when there is no terminal and no `-data_if`):
+For non-interactive installs pass both explicitly (data-out is skipped when there is no terminal and no `-data_if`):
 
 ```bash
-./install.sh -d orin-nano -cam_if enx6c1ff7171c1e -data_if enx00e04c680001
+./install.sh -d orin-nano -cam_if enx6c1ff7171c1e -data_if enx6c1ff7cbef8a
 ```
 
 The chosen roles are recorded in `/etc/hdk/interfaces.conf` so `uninstall.sh` reverts the right adapter.
@@ -182,7 +174,7 @@ The `-autostart` flag is `false` by default.
 | `-cam_if1` | No | `ethLAN2` | First camera interface (OnLogic) |
 | `-cam_if2` | No | `ethLAN3` | Second camera interface (OnLogic) |
 | `-cam_if` | No | `eth0` (jetson) / autodetected USB adapter (orin-nano) | Camera/PTP interface for Jetson boards. On Orin Nano, overrides autodetection of the USB-to-Ethernet adapter |
-| `-data_if` | No | — (skipped) | Orin Nano only: second USB-to-Ethernet adapter to configure as the data-out uplink (static `10.10.1.10/24`). Optional; skipped unless given or selected at the prompt |
+| `-data_if` | No | — (skipped) | Orin Nano only: second USB adapter to use as the data-out uplink (static `10.10.1.10/24`) |
 | `-power-mode` | No | `0` (jetson) / `2` (orin-nano) | nvpmodel index of the max-performance profile |
 | `-autostart` | No | `false` | Enable Hammerhead autostart service |
 | `-external-time-sync` | No | `false` | Enable external PTP time sync (OnLogic only) |
@@ -197,7 +189,7 @@ The `-autostart` flag is `false` by default.
 ./uninstall.sh -d orin-nano
 ```
 
-On Orin Nano the adapter roles are read back from `/etc/hdk/interfaces.conf` (written during install), so both the camera and data-out interfaces are reverted correctly. If that file is missing the camera adapter is autodetected instead; if an adapter is unplugged or was configured by an older install, pass `-cam_if <iface>` and/or `-data_if <iface>` to clean it up, or ignore the skip notice (it's a safe no-op).
+On Orin Nano the adapter roles are read back from `/etc/hdk/interfaces.conf` (written during install), so both interfaces are reverted correctly. If that file is missing, pass `-cam_if <iface>` and/or `-data_if <iface>`, or ignore the skip notice (it's a safe no-op).
 
 ### OnLogic Devices
 
@@ -238,27 +230,21 @@ automating what was previously a manual step in the Network settings GUI.
 - Applied to `eth0` (AGX Orin) or the autodetected USB adapter (Orin Nano)
 - Modifies the interface's existing NetworkManager profile; if none is bound, a
   dedicated `hdk-camera-<iface>` profile is created
+- Needs the camera link to be up; with no cable it stops with an explanatory
+  message rather than leaving a stale profile behind
 - Not used on OnLogic, which assigns static camera addresses and runs a DHCP server
 
 ### Data-Out (Orin Nano only)
 
-Configures an optional second USB-to-Ethernet adapter as the data-out uplink,
-matching what `ethLAN1` does on OnLogic:
-
-| Setting | Value |
-|---------|-------|
-| Address | `10.10.1.10/24` |
-| Default route | via `10.10.1.1`, metric `500` |
-| IPv6 | disabled |
-
-The metric keeps this route below Wi-Fi and onboard Ethernet, so it does not
-hijack normal outbound traffic. The values are fixed in `data_out/install.sh`.
+Point-to-point link to the computer receiving the data. Sets `10.10.1.10/24`, no
+gateway, IPv6 off. Give the receiving computer any other address in
+`10.10.1.0/24` — nothing serves DHCP on this link.
 
 - Opt-in: nothing is configured unless `-data_if` is passed or a spare adapter is
   selected at the prompt
-- Reconfigures the interface's existing NetworkManager profile and never creates
-  one of its own, so no extra entry shows up in `nmcli connection show`. Fails
-  with a clear message if NetworkManager has no profile bound to the adapter
+- Reconfigures the adapter's existing NetworkManager profile and never creates one
+  of its own, so no extra entry appears in `nmcli connection show`. Requires the
+  link to be up, since that is when NetworkManager creates the profile
 - Warns (without failing) if another interface already holds an address in
   `10.10.1.0/24`
 

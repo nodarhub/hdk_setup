@@ -3,9 +3,9 @@
 # Static IPv4 configuration for the data-out interface (NetworkManager)
 # Usage: ./install.sh <interface-name>
 #
-# The data-out uplink mirrors OnLogic's ethLAN1 (see
-# network/config/netplan/01-ethLAN1.yaml): a fixed static address plus a
-# high-metric default route, so it sits below Wi-Fi and onboard Ethernet.
+# Point-to-point link to the receiving computer: an address and nothing else, so
+# this interface can never take over the box's default route. Address matches
+# OnLogic's ethLAN1 (network/config/netplan/01-ethLAN1.yaml).
 
 set -e
 
@@ -13,10 +13,8 @@ log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $@"
 }
 
-# Fixed data-out addressing (matches OnLogic ethLAN1).
+# Fixed data-out address (matches OnLogic ethLAN1).
 DATA_IP="10.10.1.10/24"
-DATA_GW="10.10.1.1"
-DATA_METRIC="500"
 
 INTERFACE_NAME="$1"
 if [ -z "$INTERFACE_NAME" ]; then
@@ -45,23 +43,36 @@ if [ -n "$CONFLICT" ]; then
 fi
 
 # Reconfigure the profile NetworkManager already bound to the device; this
-# module never creates a profile of its own.
+# module never creates a profile of its own. NM only binds one once the device
+# has carrier, so a missing profile usually means the cable is not connected.
 CON="$(nmcli -g GENERAL.CONNECTION device show "$INTERFACE_NAME" 2>/dev/null || true)"
+CARRIER="$(cat "/sys/class/net/$INTERFACE_NAME/carrier" 2>/dev/null || echo 0)"
 if [ -z "$CON" ] || [ "$CON" == "--" ]; then
-    echo "Error: No NetworkManager profile is bound to '$INTERFACE_NAME'."
-    echo "Check 'nmcli device status' - the adapter must be plugged in and managed"
-    echo "by NetworkManager so there is a profile to reconfigure."
+    if [ "$CARRIER" != "1" ]; then
+        echo "Error: '$INTERFACE_NAME' has no link, so NetworkManager has no profile for it."
+        echo "Connect the data-out cable to the receiving computer, wait for the link"
+        echo "to come up, then re-run."
+    else
+        echo "Error: No NetworkManager profile is bound to '$INTERFACE_NAME'."
+        echo "The link is up, so the device is likely unmanaged - check 'nmcli device status';"
+        echo "if it says 'unmanaged', run 'sudo nmcli device set $INTERFACE_NAME managed yes'."
+    fi
     exit 1
 fi
 
-log "Configuring $INTERFACE_NAME as $DATA_IP via $DATA_GW (metric $DATA_METRIC) on connection '$CON'..."
+# Carrier can still be down here if NetworkManager is set to ignore-carrier.
+if [ "$CARRIER" != "1" ]; then
+    log "Warning: $INTERFACE_NAME has no carrier; check the data-out cable."
+fi
+
+log "Configuring $INTERFACE_NAME as $DATA_IP (no default route) on connection '$CON'..."
 
 sudo nmcli connection modify "$CON" \
     ipv4.method manual \
     ipv4.addresses "$DATA_IP" \
-    ipv4.gateway "$DATA_GW" \
-    ipv4.route-metric "$DATA_METRIC" \
-    ipv4.never-default no \
+    ipv4.gateway "" \
+    ipv4.route-metric -1 \
+    ipv4.never-default yes \
     ipv6.method ignore \
     connection.autoconnect yes
 
