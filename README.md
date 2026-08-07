@@ -112,18 +112,22 @@ Multiple USB Ethernet adapters detected:
 Select the CAMERA (data-in) interface [1-2] or type an interface name (Enter for 1): 1
 Spare USB Ethernet adapter(s) available for data-out:
     1) enx6c1ff7cbef8a  [port 2-2, direct root port - likely USB-C]
-Select the DATA-OUT interface [1-1] or type an interface name (Enter to skip):
+Select the DATA-OUT interface [1-1], type an interface name, or 'skip' (Enter for 1):
 ```
+
+Enter accepts the default at both prompts; type `skip` (or `s`) to leave data-out
+unconfigured.
 
 Two identical adapters (e.g. two UGREEN 2.5G units) report the same USB vendor
 and product IDs, so the only automatic hint is where each one is plugged in: on
 the Orin Nano devkit the four Type-A sockets sit behind an on-board hub (ports
-`2-1.x`) while the Type-C socket is a direct root port (`2-2`). Hub-attached
-adapters are listed first so the Enter default picks the USB-A camera adapter.
+`2-1.x`) while the Type-C socket is a direct root port (`2-2`). Each prompt lists
+its likely answer first, so pressing Enter twice picks the USB-A adapter for
+cameras and the USB-C one for data-out.
 **Treat the hint as a hint** — an external hub or a different carrier board can
 invert it, so check the port against what you actually plugged in.
 
-Press Enter to skip data-out setup. For non-interactive installs, pass both interfaces explicitly (data-out is skipped when there is no terminal and no `-data_if`):
+For non-interactive installs, pass both interfaces explicitly (data-out is skipped when there is no terminal and no `-data_if`):
 
 ```bash
 ./install.sh -d orin-nano -cam_if enx6c1ff7171c1e -data_if enx00e04c680001

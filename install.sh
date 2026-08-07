@@ -191,6 +191,19 @@ resolve_orin_nano_interfaces() {
       [ "$i" != "$CAMERA_INTERFACE" ] && remaining+=("$i")
     done
 
+    # Root-port adapters (the devkit's Type-C socket) first - the reverse of the
+    # camera ordering, so the Enter default is the likely data-out adapter.
+    if [ "${#remaining[@]}" -gt 1 ]; then
+      local rooted=() hubbed2=()
+      for i in "${remaining[@]}"; do
+        case "$(usb_port_path "$i")" in
+          *.*) hubbed2+=("$i") ;;
+          *)   rooted+=("$i") ;;
+        esac
+      done
+      remaining=("${rooted[@]}" "${hubbed2[@]}")
+    fi
+
     if [ "${#remaining[@]}" -gt 0 ]; then
       if [ -e /dev/tty ]; then
         log "Spare USB Ethernet adapter(s) available for data-out:"
@@ -198,9 +211,11 @@ resolve_orin_nano_interfaces() {
           log "    $((i + 1))) ${remaining[$i]}  [$(usb_port_hint "${remaining[$i]}")]"
         done
         reply=""
-        read -rp "Select the DATA-OUT interface [1-${#remaining[@]}] or type an interface name (Enter to skip): " reply </dev/tty || true
-        if [ -z "$reply" ]; then
+        read -rp "Select the DATA-OUT interface [1-${#remaining[@]}], type an interface name, or 'skip' (Enter for 1): " reply </dev/tty || true
+        if [[ "${reply,,}" == "s" || "${reply,,}" == "skip" ]]; then
           log "Skipping data-out interface setup."
+        elif [ -z "$reply" ]; then
+          DATA_OUT_INTERFACE="${remaining[0]}"
         elif [[ "$reply" =~ ^[0-9]+$ ]] && [ "$reply" -ge 1 ] && [ "$reply" -le "${#remaining[@]}" ]; then
           DATA_OUT_INTERFACE="${remaining[$((reply - 1))]}"
         else
