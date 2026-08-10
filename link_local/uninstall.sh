@@ -5,6 +5,9 @@
 
 set -e
 
+SCRIPT_DIR="$(cd -- "$(dirname "$0")" >/dev/null 2>&1; pwd -P)"
+source "$SCRIPT_DIR/../lib/net_detect.sh"
+
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $@"
 }
@@ -28,9 +31,10 @@ if nmcli -t -f NAME connection show 2>/dev/null | grep -qx "$CREATED"; then
     sudo nmcli connection delete "$CREATED" || log "Failed to delete $CREATED"
 else
     # We modified an existing profile; revert its IPv4 method to automatic.
-    CON="$(nmcli -g GENERAL.CONNECTION device show "$INTERFACE_NAME" 2>/dev/null || true)"
-    if [ -n "$CON" ] && [ "$CON" != "--" ]; then
-        log "Reverting ipv4.method to auto on connection '$CON' (applies on next activation)..."
+    # Found by interface-name too, so the cable does not have to be connected.
+    CON="$(nm_profile_uuid_for "$INTERFACE_NAME")"
+    if [ -n "$CON" ]; then
+        log "Reverting ipv4.method to auto on connection '$(nm_profile_name "$CON")' (applies on next activation)..."
         sudo nmcli connection modify "$CON" ipv4.method auto || log "Failed to modify $CON"
         # Not reactivating here: on a camera network with no DHCP server, bringing
         # the connection up with method=auto would time out ("IP config could not

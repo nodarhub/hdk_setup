@@ -43,6 +43,9 @@ hdk_setup/
 ├── link_local/          # IPv4 link-local for the Jetson camera interface
 │   ├── install.sh
 │   └── uninstall.sh
+├── data_out/            # Static IP for the Orin Nano data-out interface
+│   ├── install.sh
+│   └── uninstall.sh
 ├── network/             # OnLogic network & DHCP setup
 │   ├── install.sh
 │   ├── uninstall.sh
@@ -96,6 +99,34 @@ Press Enter to accept, or type a different name. If several USB adapters are pre
 
 This uses nvpmodel mode `2` (MAXN SUPER). Because the adapter has no PTP hardware clock, PTP runs via `ptpd` (software timestamping) instead of `ptp4l`.
 
+#### Optional second adapter for data-out
+
+A second USB-to-Ethernet adapter can be used as the **data-out** uplink to the receiving computer, with the static address `10.10.1.10/24`. Optional — with a single adapter the install never asks about it.
+
+The Ethernet cable does not have to be connected during install — settings are written to the adapter's NetworkManager profile and take effect when the cable goes in. The one exception is a brand-new adapter this machine has never seen: NetworkManager creates its profile the first time the adapter gets a link, so plug its cable in once (briefly is enough) before installing. Adapters with no cable are flagged `NO CABLE` in the list.
+
+When a spare adapter is detected, the installer asks which one to use:
+
+```
+Multiple USB Ethernet adapters detected:
+    1) enx6c1ff7171c1e  [port 2-1.1, behind hub - likely USB-A]
+    2) enx6c1ff7cbef8a  [port 2-2, direct root port - likely USB-C]
+Select the CAMERA (data-in) interface [1-2] or type an interface name (Enter for 1): 1
+Spare USB Ethernet adapter(s) available for data-out:
+    1) enx6c1ff7cbef8a  [port 2-2, direct root port - likely USB-C]
+Select the DATA-OUT interface [1-1], type an interface name, or 'skip' (Enter for 1):
+```
+
+Each prompt lists its likely answer first, so Enter twice picks the USB-A adapter for cameras and the USB-C one for data-out; type `skip` to leave data-out unconfigured. The USB-A/USB-C guess comes from the port path (the devkit's Type-A sockets sit behind a hub, the Type-C socket does not) — identical adapters are otherwise indistinguishable, so check it against what you plugged in.
+
+For non-interactive installs pass both explicitly (data-out is skipped when there is no terminal and no `-data_if`):
+
+```bash
+./install.sh -d orin-nano -cam_if enx6c1ff7171c1e -data_if enx6c1ff7cbef8a
+```
+
+The chosen roles are recorded in `/etc/hdk/interfaces.conf` so `uninstall.sh` reverts the right adapter.
+
 ### OnLogic Devices
 
 ```bash
@@ -143,6 +174,7 @@ The `-autostart` flag is `false` by default.
 | `-cam_if1` | No | `ethLAN2` | First camera interface (OnLogic) |
 | `-cam_if2` | No | `ethLAN3` | Second camera interface (OnLogic) |
 | `-cam_if` | No | `eth0` (jetson) / autodetected USB adapter (orin-nano) | Camera/PTP interface for Jetson boards. On Orin Nano, overrides autodetection of the USB-to-Ethernet adapter |
+| `-data_if` | No | — (skipped) | Orin Nano only: second USB adapter to use as the data-out uplink (static `10.10.1.10/24`) |
 | `-power-mode` | No | `0` (jetson) / `2` (orin-nano) | nvpmodel index of the max-performance profile |
 | `-autostart` | No | `false` | Enable Hammerhead autostart service |
 | `-external-time-sync` | No | `false` | Enable external PTP time sync (OnLogic only) |
@@ -157,7 +189,7 @@ The `-autostart` flag is `false` by default.
 ./uninstall.sh -d orin-nano
 ```
 
-On Orin Nano the USB adapter is autodetected for link-local cleanup; if it's unplugged, pass `-cam_if <iface>` to clean it up, or ignore the skip notice (it's a safe no-op).
+On Orin Nano the adapter roles are read back from `/etc/hdk/interfaces.conf` (written during install), so both interfaces are reverted correctly. If that file is missing, pass `-cam_if <iface>` and/or `-data_if <iface>`, or ignore the skip notice (it's a safe no-op).
 
 ### OnLogic Devices
 
@@ -198,7 +230,24 @@ automating what was previously a manual step in the Network settings GUI.
 - Applied to `eth0` (AGX Orin) or the autodetected USB adapter (Orin Nano)
 - Modifies the interface's existing NetworkManager profile; if none is bound, a
   dedicated `hdk-camera-<iface>` profile is created
+- Works with the cable disconnected: the profile is created or modified either
+  way, and is activated when the link comes up
 - Not used on OnLogic, which assigns static camera addresses and runs a DHCP server
+
+### Data-Out (Orin Nano only)
+
+Point-to-point link to the computer receiving the data. Sets `10.10.1.10/24`, no
+gateway, IPv6 off. Give the receiving computer any other address in
+`10.10.1.0/24` — nothing serves DHCP on this link.
+
+- Opt-in: nothing is configured unless `-data_if` is passed or a spare adapter is
+  selected at the prompt
+- Reconfigures the adapter's existing NetworkManager profile and never creates one
+  of its own, so no extra entry appears in `nmcli connection show`. The profile is
+  found by interface name, so the cable need not be connected — but one must exist,
+  which means the adapter has to have had a link at least once
+- Warns (without failing) if another interface already holds an address in
+  `10.10.1.0/24`
 
 ### Network (OnLogic only)
 
