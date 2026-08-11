@@ -4,6 +4,8 @@ The HDK comes with pre-setup software and system configurations. The operating s
 1. customize your HDK and
 2. completely reinstall the HDK.
 
+These scripts set up an HDK end to end — the system configuration **and**, optionally, the NODAR SDK (`hammerhead` and `nodar_viewer`) that runs on it, in one command.
+
 ## Supported Platforms
 
 - **NVIDIA Jetson Orin AGX** - Embedded GPU computing device
@@ -20,6 +22,7 @@ This [repository](https://github.com/nodarhub/hdk_setup) provides automated setu
 - **External Time Sync** - PTP slave and PHC2SYS for synchronizing to an external PTP grandmaster (OnLogic only, opt-in)
 - **Clock Optimization** - Jetson CPU/GPU clock maximization for real-time processing
 - **DHCP Server** - Automatic IP assignment for connected cameras
+- **NODAR SDK** - Installs the `hammerhead` and `nodar_viewer` packages and activates the node-locked licence (opt-in via `-sdk true`)
 
 ## Directory Structure
 
@@ -31,6 +34,8 @@ hdk_setup/
 │   └── net_detect.sh
 ├── background_services/ # Disable unnecessary system services
 │   └── disable_background_services.sh
+├── sdk/                 # NODAR SDK (hammerhead + nodar_viewer) install & licence
+│   └── install.sh
 ├── clock/               # Jetson clock optimization
 │   ├── install.sh
 │   └── uninstall.sh
@@ -166,6 +171,25 @@ To automatically start Hammerhead on boot:
 
 The `-autostart` flag is `false` by default.
 
+> **`-autostart true` needs the SDK.** The service runs `hammerhead` with no terminal, so it must be installed **and** activated or it restarts every 5 seconds on the activation prompt. `install.sh` refuses the combination up front. It also runs `hammerhead` without `-c`, so the three `.ini` files must be in `~/.config/nodar/config/`.
+
+### With the NODAR SDK
+
+```bash
+./install.sh -d jetson -sdk true -uuid <your-uuid> -activation-key ABCDE-ABCDE-ABCDE-ABCDE
+```
+
+Installs the `hammerhead` and `nodar_viewer` `.deb`s and activates your licence, wrapping NODAR's [`nodar-quickstart.sh`](https://docs.nodarsensor.net/sdk/quickstart.html). It runs before the HDK steps, so `-autostart true` works in the same command on a bare device.
+
+NODAR issues the two credentials separately: `-uuid` is your download entitlement, `-activation-key` the node-locked licence. Both are optional on a re-run, which is otherwise a no-op — the UUID is cached in `~/.config/nodar/uuid.txt` and the key is unneeded once `license.enc` exists.
+
+```bash
+./install.sh -d jetson -sdk true                    # re-run, cached UUID
+./install.sh -d jetson -sdk true -uuid <your-uuid>  # install now, activate later
+```
+
+**`extrinsics.ini` and `intrinsics.ini` are never installed** — the published samples carry another system's calibration, which would make Hammerhead emit wrong depth instead of failing loudly. See [Extrinsics](https://docs.nodarsensor.net/config/extrinsics.html) and [Intrinsics](https://docs.nodarsensor.net/config/intrinsics.html).
+
 ### All Flags
 
 | Flag | Required | Default | Description |
@@ -179,6 +203,9 @@ The `-autostart` flag is `false` by default.
 | `-autostart` | No | `false` | Enable Hammerhead autostart service |
 | `-external-time-sync` | No | `false` | Enable external PTP time sync (OnLogic only) |
 | `-sync-ip` | No | `192.168.30.25/24` | IP/CIDR for ethLAN4 when external time sync is enabled |
+| `-sdk` | No | `false` | Install the NODAR SDK (`hammerhead` + `nodar_viewer`) |
+| `-uuid` | No | cached `~/.config/nodar/uuid.txt` | NODAR download entitlement (UUID or download URL). Used only with `-sdk true` |
+| `-activation-key` | No | — | Licence key, `XXXXX-XXXXX-XXXXX-XXXXX`. Used only with `-sdk true` |
 
 ## Uninstallation
 
@@ -324,6 +351,20 @@ Maximizes CPU/GPU clocks for optimal real-time performance:
   hotter under sustained max clocks. AGX Orin / OnLogic keep dynamic fan control.
 - Automatically restores default clocks on shutdown
 
+### NODAR SDK (Optional)
+
+Wraps NODAR's `nodar-quickstart.sh` to install `hammerhead` and `nodar_viewer`, adding what the quickstart assumes you have already done:
+
+- Installs its dependencies (`wget`, `jq`, `unzip`, `lsb-release`, `curl`)
+- Puts `/usr/local/cuda/bin` on `PATH` if `nvcc` is not there, and appends it once to `~/.bashrc`
+- Seeds `master_config.ini` from the [published template](https://docs.nodarsensor.net/config/master_config.html) if absent
+- Activates the licence by running `hammerhead` once, since it has no activation flag and only prompts on stdin
+- Refuses to run under `sudo`, which would put the licence in `/root` instead of your home
+
+Exits `0` when activated, `2` when installed but not activated, `1` on failure; `install.sh` treats `2` as fatal only with `-autostart true`. Runnable on its own as `./sdk/install.sh -uuid <id> -activation-key <key>`.
+
+There is deliberately **no removal script**; `./uninstall.sh` does not touch the SDK. Remove it with `sudo apt-get remove hammerhead-<version> nodar_viewer-<version>` — names are versioned, so use `dpkg -l | grep nodar` to see what is installed.
+
 ### Hammerhead Autostart (Optional)
 
 Creates a systemd service to automatically start Hammerhead on boot:
@@ -352,9 +393,9 @@ sudo journalctl -u hammerhead -f
 ## Requirements
 
 - Linux (Ubuntu/Debian-based)
-- sudo privileges (scripts invoke sudo internally as needed)
 - For Jetson: NVIDIA Jetson Orin AGX or Orin Nano with JetPack
 - For OnLogic: OnLogic with Orin AGX and multiple Ethernet interfaces
+- For `-sdk true`: internet access, the CUDA toolkit installed, and your NODAR UUID and activation key
 
 ## Services Installed
 

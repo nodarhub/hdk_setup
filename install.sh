@@ -8,6 +8,7 @@
 #   With external time sync: ./install.sh -d onlogic -cam_if1 ethLAN2 -cam_if2 ethLAN3 -external-time-sync true
 #   With custom sync IP:     ./install.sh -d onlogic -cam_if1 ethLAN2 -cam_if2 ethLAN3 -external-time-sync true -sync-ip 10.0.0.50/24
 #   Orin Nano with a data-out adapter: ./install.sh -d orin-nano -cam_if enxAAA -data_if enxBBB
+#   With the NODAR SDK: ./install.sh -d jetson -sdk true -uuid <uuid> -activation-key ABCDE-ABCDE-ABCDE-ABCDE
 
 set -e
 set -o pipefail
@@ -36,8 +37,14 @@ DATA_OUT_INTERFACE=""
 PREV_DATA_OUT_INTERFACE=""
 # Records which USB adapter got which role, for uninstall.
 IFACE_STATE_FILE="/etc/hdk/interfaces.conf"
+# NODAR SDK (hammerhead + nodar_viewer). Opt-in, like -autostart.
+INSTALL_SDK=false
+SDK_UUID=""
+SDK_ACTIVATION_KEY=""
+# The SDK, its licence and its config all belong to the invoking user, not root.
+RUN_USER="${SUDO_USER:-$USER}"
 
-USAGE="Usage: $0 -d <jetson|orin-nano|onlogic> [-cam_if <iface>] [-cam_if1 <iface>] [-cam_if2 <iface>] [-data_if <iface>] [-autostart <true|false>] [-external-time-sync <true|false>] [-sync-ip <ip/cidr>] [-power-mode <n>]"
+USAGE="Usage: $0 -d <jetson|orin-nano|onlogic> [-cam_if <iface>] [-cam_if1 <iface>] [-cam_if2 <iface>] [-data_if <iface>] [-autostart <true|false>] [-external-time-sync <true|false>] [-sync-ip <ip/cidr>] [-power-mode <n>] [-sdk <true|false>] [-uuid <uuid>] [-activation-key <key>]"
 
 # Logging function
 log() {
@@ -97,6 +104,23 @@ while [[ $# -gt 0 ]]; do
       POWER_MODE="$2"
       shift 2
       ;;
+    -sdk)
+      if [[ "$2" == "true" || "$2" == "false" ]]; then
+        INSTALL_SDK="$2"
+      else
+        echo "Error: Invalid value '$2' for -sdk. Must be true or false."
+        exit 1
+      fi
+      shift 2
+      ;;
+    -uuid)
+      SDK_UUID="$2"
+      shift 2
+      ;;
+    -activation-key)
+      SDK_ACTIVATION_KEY="$2"
+      shift 2
+      ;;
     *)
       echo "Error: Unknown option '$1'"
       echo "$USAGE"
@@ -116,6 +140,20 @@ if [[ -n "$DATA_OUT_INTERFACE" && "$DEVICE_TYPE" != "orin-nano" ]]; then
   echo "Error: -data_if is only supported on -d orin-nano (AGX Orin has an onboard uplink; OnLogic uses ethLAN1 via netplan)."
   exit 1
 fi
+
+# The SDK credentials do nothing without -sdk true; silently skipping is confusing.
+if [[ "$INSTALL_SDK" != "true" ]] && [[ -n "$SDK_UUID" || -n "$SDK_ACTIVATION_KEY" ]]; then
+  echo "Warning: -uuid/-activation-key given without -sdk true; the SDK will not be installed."
+fi
+
+# The autostart service can't answer hammerhead's activation prompt, so it needs
+# the SDK already there. Refuse now rather than aborting at the last step.
+if [[ "$INSTALL_AUTOSTART" == "true" && "$INSTALL_SDK" != "true" && ! -x /usr/bin/hammerhead ]]; then
+  echo "Error: -autostart true requires Hammerhead. Add: -sdk true -uuid <uuid> -activation-key <key>"
+  exit 1
+fi
+
+USER_HOME="$(getent passwd "$RUN_USER" | cut -d: -f6)"
 
 # Autodetect the Orin Nano's USB-to-Ethernet adapters and confirm with the user.
 # The camera adapter is required, data-out is optional. Explicit -cam_if /
@@ -269,6 +307,25 @@ if [ "$EXTERNAL_TIME_SYNC" == "true" ]; then
 fi
 log "=========================================="
 
+# NODAR SDK (optional), before the numbered steps: step 9 enables a service that
+# runs hammerhead with no terminal, so it needs an installed, activated binary.
+# `|| SDK_RC=$?` keeps the exact code without tripping errexit or the ERR trap;
+# exit 2 means installed but not activated.
+if [ "$INSTALL_SDK" == "true" ]; then
+  log "[SDK] Installing NODAR SDK..."
+  SDK_RC=0
+  "$SCRIPT_DIR/sdk/install.sh" -uuid "$SDK_UUID" -activation-key "$SDK_ACTIVATION_KEY" || SDK_RC=$?
+  if [ "$SDK_RC" -eq 2 ] && [ "$INSTALL_AUTOSTART" == "true" ]; then
+    echo "Error: Hammerhead is not activated; -autostart true would restart-loop on its prompt."
+    exit 1
+  elif [ "$SDK_RC" -ne 0 ] && [ "$SDK_RC" -ne 2 ]; then
+    echo "Error: NODAR SDK installation failed."
+    exit 1
+  fi
+else
+  log "[SDK] Skipping NODAR SDK (disabled by default, use -sdk true to enable)"
+fi
+
 # Step 1: Disable background services
 log "[1/9] Disabling background services..."
 "$SCRIPT_DIR/background_services/disable_background_services.sh"
@@ -352,6 +409,15 @@ fi
 
 # Step 9: Hammerhead Autostart (optional)
 if [ "$INSTALL_AUTOSTART" == "true" ]; then
+  # The service runs hammerhead with no -c, so it needs these in the user's
+  # config dir. Warn only - they can still be added before the next reboot.
+  MISSING_CONFIG=()
+  for f in extrinsics.ini intrinsics.ini master_config.ini; do
+    [ -f "$USER_HOME/.config/nodar/config/$f" ] || MISSING_CONFIG+=("$f")
+  done
+  if [ "${#MISSING_CONFIG[@]}" -gt 0 ]; then
+    log "Warning: hammerhead.service needs ~/.config/nodar/config/{${MISSING_CONFIG[*]}} - still missing."
+  fi
   log "[9/9] Setting up Hammerhead autostart service..."
   "$SCRIPT_DIR/hammerhead/install.sh" -external-time-sync "$EXTERNAL_TIME_SYNC"
 else
