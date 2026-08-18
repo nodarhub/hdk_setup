@@ -204,6 +204,7 @@ NODAR issues the two credentials separately: `-uuid` is your download entitlemen
 | `-data_if` | No | — (skipped) | Orin Nano only: second USB adapter to use as the data-out uplink (static `10.10.1.10/24`) |
 | `-power-mode` | No | `0` (jetson) / `2` (orin-nano) | nvpmodel index of the max-performance profile |
 | `-autostart` | No | `false` | Enable Hammerhead autostart service |
+| `-ptp` | No | `true` | Install the PTP master (`ptpd` on Orin Nano, `ptp4l` on AGX Orin/OnLogic). `-ptp false` skips it |
 | `-external-time-sync` | No | `false` | Enable external PTP time sync (OnLogic only) |
 | `-sync-ip` | No | `192.168.30.25/24` | IP/CIDR for ethLAN4 when external time sync is enabled |
 | `-sdk` | No | `false` | Install the NODAR SDK (`hammerhead` + `nodar_viewer`) |
@@ -329,7 +330,8 @@ Also configures ISC DHCP server with subnets for camera interfaces.
 ### PTP Master
 
 The device acts as the PTP master clock for the connected cameras. Two backends
-are used depending on the board's timestamping capabilities:
+are used depending on the board's timestamping capabilities. Pass `-ptp false`
+to skip this step, for boxes whose cameras are synchronized elsewhere.
 
 **ptp4l — AGX Orin & OnLogic** (`ptp/`)
 

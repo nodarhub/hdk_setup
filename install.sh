@@ -8,6 +8,7 @@
 #   With external time sync: ./install.sh -d onlogic -cam_if1 ethLAN2 -cam_if2 ethLAN3 -external-time-sync true
 #   With custom sync IP:     ./install.sh -d onlogic -cam_if1 ethLAN2 -cam_if2 ethLAN3 -external-time-sync true -sync-ip 10.0.0.50/24
 #   Orin Nano with a data-out adapter: ./install.sh -d orin-nano -cam_if enxAAA -data_if enxBBB
+#   Without the PTP master (ptpd on Orin Nano, ptp4l elsewhere): ./install.sh -d orin-nano -ptp false
 #   With the NODAR SDK: ./install.sh -d jetson -sdk true -uuid <uuid> -activation-key ABCDE-ABCDE-ABCDE-ABCDE
 
 set -e
@@ -25,6 +26,10 @@ DEVICE_TYPE=""
 CAMERA_INTERFACE_1="ethLAN2"
 CAMERA_INTERFACE_2="ethLAN3"
 INSTALL_AUTOSTART=false
+# PTP master (ptp4l on AGX Orin/OnLogic, ptpd on Orin Nano). On by default;
+# -ptp false leaves the cameras unsynchronized, for boxes that get their
+# camera time from somewhere else.
+INSTALL_PTP=true
 EXTERNAL_TIME_SYNC=false
 SYNC_IP="192.168.30.25/24"
 # Jetson-only settings, resolved per board after flag parsing.
@@ -44,7 +49,7 @@ SDK_ACTIVATION_KEY=""
 # The SDK, its licence and its config all belong to the invoking user, not root.
 RUN_USER="${SUDO_USER:-$USER}"
 
-USAGE="Usage: $0 -d <jetson|orin-nano|onlogic> [-cam_if <iface>] [-cam_if1 <iface>] [-cam_if2 <iface>] [-data_if <iface>] [-autostart <true|false>] [-external-time-sync <true|false>] [-sync-ip <ip/cidr>] [-power-mode <n>] [-sdk <true|false>] [-uuid <uuid>] [-activation-key <key>]"
+USAGE="Usage: $0 -d <jetson|orin-nano|onlogic> [-cam_if <iface>] [-cam_if1 <iface>] [-cam_if2 <iface>] [-data_if <iface>] [-autostart <true|false>] [-ptp <true|false>] [-external-time-sync <true|false>] [-sync-ip <ip/cidr>] [-power-mode <n>] [-sdk <true|false>] [-uuid <uuid>] [-activation-key <key>]"
 
 # Logging function
 log() {
@@ -83,6 +88,15 @@ while [[ $# -gt 0 ]]; do
         INSTALL_AUTOSTART="$2"
       else
         echo "Error: Invalid value '$2' for -autostart. Must be true or false."
+        exit 1
+      fi
+      shift 2
+      ;;
+    -ptp)
+      if [[ "$2" == "true" || "$2" == "false" ]]; then
+        INSTALL_PTP="$2"
+      else
+        echo "Error: Invalid value '$2' for -ptp. Must be true or false."
         exit 1
       fi
       shift 2
@@ -401,13 +415,17 @@ fi
 
 # Step 8: PTP Setup. AGX Orin and OnLogic use ptp4l (hardware timestamping);
 # the Orin Nano's adapter has no PTP hardware clock, so it uses ptpd (software).
-log "[8/10] Setting up PTP..."
-if [ "$DEVICE_TYPE" == "onlogic" ]; then
-  "$SCRIPT_DIR/ptp/install.sh" -i "$CAMERA_INTERFACE_1" -i "$CAMERA_INTERFACE_2"
-elif [ "$DEVICE_TYPE" == "orin-nano" ]; then
-  "$SCRIPT_DIR/ptpd/install.sh" -i "$CAMERA_INTERFACE"
+if [ "$INSTALL_PTP" == "true" ]; then
+  log "[8/10] Setting up PTP..."
+  if [ "$DEVICE_TYPE" == "onlogic" ]; then
+    "$SCRIPT_DIR/ptp/install.sh" -i "$CAMERA_INTERFACE_1" -i "$CAMERA_INTERFACE_2"
+  elif [ "$DEVICE_TYPE" == "orin-nano" ]; then
+    "$SCRIPT_DIR/ptpd/install.sh" -i "$CAMERA_INTERFACE"
+  else
+    "$SCRIPT_DIR/ptp/install.sh" -i "$CAMERA_INTERFACE"
+  fi
 else
-  "$SCRIPT_DIR/ptp/install.sh" -i "$CAMERA_INTERFACE"
+  log "[8/10] Skipping PTP master setup (-ptp false); nothing on this box will synchronize the cameras"
 fi
 
 # Step 9: Clock Setup. Orin Nano also pins the fan to max (it runs hotter under
