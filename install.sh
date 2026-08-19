@@ -8,6 +8,7 @@
 #   With external time sync: ./install.sh -d onlogic -cam_if1 ethLAN2 -cam_if2 ethLAN3 -external-time-sync true
 #   With custom sync IP:     ./install.sh -d onlogic -cam_if1 ethLAN2 -cam_if2 ethLAN3 -external-time-sync true -sync-ip 10.0.0.50/24
 #   Orin Nano with a data-out adapter: ./install.sh -d orin-nano -cam_if enxAAA -data_if enxBBB
+#   Without the PTP master (ptpd on Orin Nano, ptp4l elsewhere): ./install.sh -d orin-nano -ptp false
 #   With the NODAR SDK: ./install.sh -d jetson -sdk true -uuid <uuid> -activation-key ABCDE-ABCDE-ABCDE-ABCDE
 
 set -e
@@ -25,6 +26,10 @@ DEVICE_TYPE=""
 CAMERA_INTERFACE_1="ethLAN2"
 CAMERA_INTERFACE_2="ethLAN3"
 INSTALL_AUTOSTART=false
+# PTP master (ptp4l on AGX Orin/OnLogic, ptpd on Orin Nano). On by default;
+# -ptp false leaves the cameras unsynchronized, for boxes that get their
+# camera time from somewhere else.
+INSTALL_PTP=true
 EXTERNAL_TIME_SYNC=false
 SYNC_IP="192.168.30.25/24"
 # Jetson-only settings, resolved per board after flag parsing.
@@ -44,7 +49,7 @@ SDK_ACTIVATION_KEY=""
 # The SDK, its licence and its config all belong to the invoking user, not root.
 RUN_USER="${SUDO_USER:-$USER}"
 
-USAGE="Usage: $0 -d <jetson|orin-nano|onlogic> [-cam_if <iface>] [-cam_if1 <iface>] [-cam_if2 <iface>] [-data_if <iface>] [-autostart <true|false>] [-external-time-sync <true|false>] [-sync-ip <ip/cidr>] [-power-mode <n>] [-sdk <true|false>] [-uuid <uuid>] [-activation-key <key>]"
+USAGE="Usage: $0 -d <jetson|orin-nano|onlogic> [-cam_if <iface>] [-cam_if1 <iface>] [-cam_if2 <iface>] [-data_if <iface>] [-autostart <true|false>] [-ptp <true|false>] [-external-time-sync <true|false>] [-sync-ip <ip/cidr>] [-power-mode <n>] [-sdk <true|false>] [-uuid <uuid>] [-activation-key <key>]"
 
 # Logging function
 log() {
@@ -83,6 +88,15 @@ while [[ $# -gt 0 ]]; do
         INSTALL_AUTOSTART="$2"
       else
         echo "Error: Invalid value '$2' for -autostart. Must be true or false."
+        exit 1
+      fi
+      shift 2
+      ;;
+    -ptp)
+      if [[ "$2" == "true" || "$2" == "false" ]]; then
+        INSTALL_PTP="$2"
+      else
+        echo "Error: Invalid value '$2' for -ptp. Must be true or false."
         exit 1
       fi
       shift 2
@@ -307,7 +321,7 @@ if [ "$EXTERNAL_TIME_SYNC" == "true" ]; then
 fi
 log "=========================================="
 
-# NODAR SDK (optional), before the numbered steps: step 9 enables a service that
+# NODAR SDK (optional), before the numbered steps: step 10 enables a service that
 # runs hammerhead with no terminal, so it needs an installed, activated binary.
 # `|| SDK_RC=$?` keeps the exact code without tripping errexit or the ERR trap;
 # exit 2 means installed but not activated.
@@ -327,87 +341,103 @@ else
 fi
 
 # Step 1: Disable background services
-log "[1/9] Disabling background services..."
+log "[1/10] Disabling background services..."
 "$SCRIPT_DIR/background_services/disable_background_services.sh"
 
 # Step 2: Camera interface setup (Jetson only): IPv4 link-local, plus MTU 9000
 # on AGX Orin. The Orin Nano's USB adapter is unreliable at 9000, so it stays
 # at the default MTU. OnLogic handles both via netplan in the network step.
 if [ "$DEVICE_TYPE" == "jetson" ]; then
-  log "[2/9] Configuring camera interface $CAMERA_INTERFACE (MTU 9000 + IPv4 link-local)..."
+  log "[2/10] Configuring camera interface $CAMERA_INTERFACE (MTU 9000 + IPv4 link-local)..."
   "$SCRIPT_DIR/mtu/install.sh" "$CAMERA_INTERFACE"
   "$SCRIPT_DIR/link_local/install.sh" "$CAMERA_INTERFACE"
 elif [ "$DEVICE_TYPE" == "orin-nano" ]; then
-  log "[2/9] Configuring camera interface $CAMERA_INTERFACE (IPv4 link-local; default MTU)..."
+  log "[2/10] Configuring camera interface $CAMERA_INTERFACE (IPv4 link-local; default MTU)..."
   "$SCRIPT_DIR/link_local/install.sh" "$CAMERA_INTERFACE"
 else
-  log "[2/9] Camera interface setup deferred to network step (OnLogic - netplan + DHCP)"
+  log "[2/10] Camera interface setup deferred to network step (OnLogic - netplan + DHCP)"
 fi
 
-# Step 3: Data-out interface (Orin Nano only, optional second USB adapter).
+# Step 3: Receive-path tuning on the camera interface (Orin Nano only): a 128 MB
+# ceiling for SO_RCVBUF (sysctl drop-in) and a 4096-descriptor RX ring (stored as
+# ethtool.ring-rx on the adapter's NetworkManager profile, so it must run after
+# the link-local step that guarantees the profile exists). Adapters whose driver
+# has no ring parameters are skipped with a warning, not an error.
+if [ "$DEVICE_TYPE" == "orin-nano" ]; then
+  log "[3/10] Tuning the receive path on $CAMERA_INTERFACE (rmem_max 128 MB + RX ring 4096)..."
+  "$SCRIPT_DIR/net_tune/install.sh" "$CAMERA_INTERFACE"
+else
+  log "[3/10] Skipping receive-path tuning (Orin Nano only)"
+fi
+
+# Step 4: Data-out interface (Orin Nano only, optional second USB adapter).
 # A changed selection reverts the previous adapter first, otherwise it would keep
 # the same static address and collide with the new one.
 if [ -n "$PREV_DATA_OUT_INTERFACE" ] && [ "$PREV_DATA_OUT_INTERFACE" != "$DATA_OUT_INTERFACE" ]; then
-  log "[3/9] Data-out adapter changed; reverting $PREV_DATA_OUT_INTERFACE first..."
+  log "[4/10] Data-out adapter changed; reverting $PREV_DATA_OUT_INTERFACE first..."
   "$SCRIPT_DIR/data_out/uninstall.sh" "$PREV_DATA_OUT_INTERFACE" || log "Reverting $PREV_DATA_OUT_INTERFACE completed with warnings"
 fi
 if [ "$DEVICE_TYPE" == "orin-nano" ] && [ -n "$DATA_OUT_INTERFACE" ]; then
-  log "[3/9] Configuring data-out interface $DATA_OUT_INTERFACE (static 10.10.1.10/24)..."
+  log "[4/10] Configuring data-out interface $DATA_OUT_INTERFACE (static 10.10.1.10/24)..."
   "$SCRIPT_DIR/data_out/install.sh" "$DATA_OUT_INTERFACE"
 elif [ "$DEVICE_TYPE" == "orin-nano" ]; then
-  log "[3/9] Skipping data-out interface setup (no adapter selected)"
+  log "[4/10] Skipping data-out interface setup (no adapter selected)"
 else
-  log "[3/9] Skipping data-out interface setup (Orin Nano only)"
+  log "[4/10] Skipping data-out interface setup (Orin Nano only)"
 fi
 
-# Step 4: Network Setup (OnLogic only)
+# Step 5: Network Setup (OnLogic only)
 if [ "$DEVICE_TYPE" == "onlogic" ]; then
-  log "[4/9] Setting up network for $CAMERA_INTERFACE_1 and $CAMERA_INTERFACE_2..."
+  log "[5/10] Setting up network for $CAMERA_INTERFACE_1 and $CAMERA_INTERFACE_2..."
   "$SCRIPT_DIR/network/install.sh" "$CAMERA_INTERFACE_1" "$CAMERA_INTERFACE_2" -external-time-sync "$EXTERNAL_TIME_SYNC" -sync-ip "$SYNC_IP"
 else
-  log "[4/9] Skipping network setup (Jetson)"
+  log "[5/10] Skipping network setup (Jetson)"
 fi
 
-# Step 5: PTP Slave Setup (OnLogic only, when external time sync is enabled)
+# Step 6: PTP Slave Setup (OnLogic only, when external time sync is enabled)
 if [ "$EXTERNAL_TIME_SYNC" == "true" ] && [ "$DEVICE_TYPE" == "onlogic" ]; then
-  log "[5/9] Disabling systemd-timesyncd (NTP) to avoid conflicts with PHC2SYS..."
+  log "[6/10] Disabling systemd-timesyncd (NTP) to avoid conflicts with PHC2SYS..."
   sudo systemctl stop systemd-timesyncd 2>/dev/null || true
   sudo systemctl disable systemd-timesyncd 2>/dev/null || true
-  log "[5/9] Setting up PTP slave for ethLAN4..."
+  log "[6/10] Setting up PTP slave for ethLAN4..."
   "$SCRIPT_DIR/ptp_slave/install.sh" -i ethLAN4
 else
-  log "[5/9] Skipping PTP slave setup (not enabled or not OnLogic)"
+  log "[6/10] Skipping PTP slave setup (not enabled or not OnLogic)"
 fi
 
-# Step 6: PHC2SYS Setup (OnLogic only, when external time sync is enabled)
+# Step 7: PHC2SYS Setup (OnLogic only, when external time sync is enabled)
 if [ "$EXTERNAL_TIME_SYNC" == "true" ] && [ "$DEVICE_TYPE" == "onlogic" ]; then
-  log "[6/9] Setting up phc2sys for ethLAN4..."
+  log "[7/10] Setting up phc2sys for ethLAN4..."
   "$SCRIPT_DIR/phc2sys/install.sh" -i ethLAN4
 else
-  log "[6/9] Skipping phc2sys setup (not enabled or not OnLogic)"
+  log "[7/10] Skipping phc2sys setup (not enabled or not OnLogic)"
 fi
 
-# Step 7: PTP Setup. AGX Orin and OnLogic use ptp4l (hardware timestamping);
+# Step 8: PTP Setup. AGX Orin and OnLogic use ptp4l (hardware timestamping);
 # the Orin Nano's adapter has no PTP hardware clock, so it uses ptpd (software).
-log "[7/9] Setting up PTP..."
-if [ "$DEVICE_TYPE" == "onlogic" ]; then
-  "$SCRIPT_DIR/ptp/install.sh" -i "$CAMERA_INTERFACE_1" -i "$CAMERA_INTERFACE_2"
-elif [ "$DEVICE_TYPE" == "orin-nano" ]; then
-  "$SCRIPT_DIR/ptpd/install.sh" -i "$CAMERA_INTERFACE"
+if [ "$INSTALL_PTP" == "true" ]; then
+  log "[8/10] Setting up PTP..."
+  if [ "$DEVICE_TYPE" == "onlogic" ]; then
+    "$SCRIPT_DIR/ptp/install.sh" -i "$CAMERA_INTERFACE_1" -i "$CAMERA_INTERFACE_2"
+  elif [ "$DEVICE_TYPE" == "orin-nano" ]; then
+    "$SCRIPT_DIR/ptpd/install.sh" -i "$CAMERA_INTERFACE"
+  else
+    "$SCRIPT_DIR/ptp/install.sh" -i "$CAMERA_INTERFACE"
+  fi
 else
-  "$SCRIPT_DIR/ptp/install.sh" -i "$CAMERA_INTERFACE"
+  log "[8/10] Skipping PTP master setup (-ptp false); nothing on this box will synchronize the cameras"
 fi
 
-# Step 8: Clock Setup. Orin Nano also pins the fan to max (it runs hotter under
+# Step 9: Clock Setup. Orin Nano also pins the fan to max (it runs hotter under
 # sustained max clocks); AGX/OnLogic keep dynamic fan control.
-log "[8/9] Setting up clock service (nvpmodel mode $POWER_MODE)..."
+log "[9/10] Setting up clock service (nvpmodel mode $POWER_MODE)..."
 if [ "$DEVICE_TYPE" == "orin-nano" ]; then
   "$SCRIPT_DIR/clock/install.sh" -power-mode "$POWER_MODE" -fan true
 else
   "$SCRIPT_DIR/clock/install.sh" -power-mode "$POWER_MODE"
 fi
 
-# Step 9: Hammerhead Autostart (optional)
+# Step 10: Hammerhead Autostart (optional)
 if [ "$INSTALL_AUTOSTART" == "true" ]; then
   # The service runs hammerhead with no -c, so it needs these in the user's
   # config dir. Warn only - they can still be added before the next reboot.
@@ -418,10 +448,10 @@ if [ "$INSTALL_AUTOSTART" == "true" ]; then
   if [ "${#MISSING_CONFIG[@]}" -gt 0 ]; then
     log "Warning: hammerhead.service needs ~/.config/nodar/config/{${MISSING_CONFIG[*]}} - still missing."
   fi
-  log "[9/9] Setting up Hammerhead autostart service..."
+  log "[10/10] Setting up Hammerhead autostart service..."
   "$SCRIPT_DIR/hammerhead/install.sh" -external-time-sync "$EXTERNAL_TIME_SYNC"
 else
-  log "[9/9] Skipping Hammerhead autostart (disabled by default, use -autostart true to enable)"
+  log "[10/10] Skipping Hammerhead autostart (disabled by default, use -autostart true to enable)"
 fi
 
 log "=========================================="

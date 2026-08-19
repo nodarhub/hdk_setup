@@ -51,6 +51,9 @@ hdk_setup/
 ├── data_out/            # Static IP for the Orin Nano data-out interface
 │   ├── install.sh
 │   └── uninstall.sh
+├── net_tune/            # Receive-path tuning (rmem_max + RX ring) — Orin Nano
+│   ├── install.sh
+│   └── uninstall.sh
 ├── network/             # OnLogic network & DHCP setup
 │   ├── install.sh
 │   ├── uninstall.sh
@@ -102,7 +105,7 @@ Press Enter to accept, or type a different name. If several USB adapters are pre
 ./install.sh -d orin-nano -cam_if enx6c1ff7171c1e
 ```
 
-This uses nvpmodel mode `2` (MAXN SUPER). Because the adapter has no PTP hardware clock, PTP runs via `ptpd` (software timestamping) instead of `ptp4l`.
+This uses nvpmodel mode `2` (MAXN SUPER). Because the adapter has no PTP hardware clock, PTP runs via `ptpd` (software timestamping) instead of `ptp4l`. The camera interface also gets [receive-path tuning](#receive-path-tuning-orin-nano-only): a 128 MB `net.core.rmem_max` ceiling and a 4096-descriptor RX ring.
 
 #### Optional second adapter for data-out
 
@@ -201,6 +204,7 @@ NODAR issues the two credentials separately: `-uuid` is your download entitlemen
 | `-data_if` | No | — (skipped) | Orin Nano only: second USB adapter to use as the data-out uplink (static `10.10.1.10/24`) |
 | `-power-mode` | No | `0` (jetson) / `2` (orin-nano) | nvpmodel index of the max-performance profile |
 | `-autostart` | No | `false` | Enable Hammerhead autostart service |
+| `-ptp` | No | `true` | Install the PTP master (`ptpd` on Orin Nano, `ptp4l` on AGX Orin/OnLogic). `-ptp false` skips it |
 | `-external-time-sync` | No | `false` | Enable external PTP time sync (OnLogic only) |
 | `-sync-ip` | No | `192.168.30.25/24` | IP/CIDR for ethLAN4 when external time sync is enabled |
 | `-sdk` | No | `false` | Install the NODAR SDK (`hammerhead` + `nodar_viewer`) |
@@ -276,6 +280,28 @@ gateway, IPv6 off. Give the receiving computer any other address in
 - Warns (without failing) if another interface already holds an address in
   `10.10.1.0/24`
 
+### Receive-Path Tuning (Orin Nano only)
+
+Raises two receive limits on the camera interface, both persistent:
+
+| Setting | Value | Where it persists |
+|---------|-------|-------------------|
+| `net.core.rmem_max` | 128 MB (`134217728`) | `/etc/sysctl.d/99-hdk-net-tune.conf` |
+| RX ring descriptors | 4096 | `ethtool.ring-rx` on the adapter's NetworkManager profile |
+
+`rmem_max` is only a ceiling for `SO_RCVBUF` — the receiving application still
+has to request the bigger buffer. The RX ring is stored on the NetworkManager
+profile, so NM reapplies it on every activation (needs NM 1.32+; JetPack 6 ships
+1.36). Adapters whose driver reports no ring parameters are skipped with a
+warning, and a request above the driver maximum is clamped. Pre-install values
+go to `/etc/hdk/net_tune.conf` and are restored by `uninstall.sh`.
+
+```bash
+sysctl net.core.rmem_max                       # verify
+nmcli -f ethtool connection show <connection>  # ethtool.ring-rx: 4096
+./net_tune/install.sh <iface> [rx-ring] [rmem-max]   # any board, manually
+```
+
 ### Network (OnLogic only)
 
 Configures multi-interface network setup:
@@ -304,7 +330,8 @@ Also configures ISC DHCP server with subnets for camera interfaces.
 ### PTP Master
 
 The device acts as the PTP master clock for the connected cameras. Two backends
-are used depending on the board's timestamping capabilities:
+are used depending on the board's timestamping capabilities. Pass `-ptp false`
+to skip this step, for boxes whose cameras are synchronized elsewhere.
 
 **ptp4l — AGX Orin & OnLogic** (`ptp/`)
 

@@ -103,28 +103,28 @@ log "Device type: $DEVICE_TYPE"
 log "=========================================="
 
 # Step 1: Hammerhead autostart uninstall
-log "[1/8] Uninstalling Hammerhead autostart service..."
+log "[1/9] Uninstalling Hammerhead autostart service..."
 "$SCRIPT_DIR/hammerhead/uninstall.sh" || log "Hammerhead uninstall completed with warnings"
 
 # Step 2: Clock uninstall
-log "[2/8] Uninstalling clock service..."
+log "[2/9] Uninstalling clock service..."
 "$SCRIPT_DIR/clock/uninstall.sh" || log "Clock uninstall completed with warnings"
 
 # Step 3: PHC2SYS uninstall (safe no-op if never installed)
-log "[3/8] Uninstalling phc2sys..."
+log "[3/9] Uninstalling phc2sys..."
 "$SCRIPT_DIR/phc2sys/uninstall.sh" || log "phc2sys uninstall completed with warnings"
 
 # Step 4: PTP Slave uninstall (safe no-op if never installed)
-log "[4/8] Uninstalling PTP slave..."
+log "[4/9] Uninstalling PTP slave..."
 "$SCRIPT_DIR/ptp_slave/uninstall.sh" || log "PTP slave uninstall completed with warnings"
 
 # Re-enable systemd-timesyncd in case it was disabled by external time sync
-log "[4/8] Re-enabling systemd-timesyncd..."
+log "[4/9] Re-enabling systemd-timesyncd..."
 sudo systemctl enable systemd-timesyncd 2>/dev/null || true
 sudo systemctl start systemd-timesyncd 2>/dev/null || true
 
 # Step 5: PTP uninstall (Orin Nano uses ptpd; AGX Orin and OnLogic use ptp4l)
-log "[5/8] Uninstalling PTP..."
+log "[5/9] Uninstalling PTP..."
 if [ "$DEVICE_TYPE" == "orin-nano" ]; then
   "$SCRIPT_DIR/ptpd/uninstall.sh" || log "ptpd uninstall completed with warnings"
 else
@@ -133,33 +133,46 @@ fi
 
 # Step 6: Network uninstall (OnLogic only)
 if [ "$DEVICE_TYPE" == "onlogic" ]; then
-  log "[6/8] Uninstalling network..."
+  log "[6/9] Uninstalling network..."
   "$SCRIPT_DIR/network/uninstall.sh" || log "Network uninstall completed with warnings"
 else
-  log "[6/8] Skipping network uninstall (Jetson)"
+  log "[6/9] Skipping network uninstall (Jetson)"
 fi
 
 # Step 7: Data-out interface uninstall (Orin Nano, or any board via -data_if)
 if [ -n "$DATA_OUT_INTERFACE" ]; then
-  log "[7/8] Uninstalling data-out interface config for $DATA_OUT_INTERFACE..."
+  log "[7/9] Uninstalling data-out interface config for $DATA_OUT_INTERFACE..."
   "$SCRIPT_DIR/data_out/uninstall.sh" "$DATA_OUT_INTERFACE" || log "Data-out uninstall completed with warnings"
 else
-  log "[7/8] Skipping data-out interface uninstall (none configured; pass -data_if <iface> to clean one up)"
+  log "[7/9] Skipping data-out interface uninstall (none configured; pass -data_if <iface> to clean one up)"
 fi
 
 # Step 8: Camera interface uninstall (Jetson only): IPv4 link-local, plus MTU on
 # AGX Orin (the Orin Nano never sets MTU 9000). OnLogic MTU/addressing is handled
 # via netplan in the network uninstall step.
 if [ "$DEVICE_TYPE" == "onlogic" ]; then
-  log "[8/8] Camera interface cleanup handled in network step (OnLogic - netplan)"
+  log "[8/9] Camera interface cleanup handled in network step (OnLogic - netplan)"
 elif [ -z "$CAMERA_INTERFACE" ]; then
-  log "[8/8] Skipping camera interface uninstall (no USB Ethernet adapter detected; pass -cam_if <iface> to clean it up)"
+  log "[8/9] Skipping camera interface uninstall (no USB Ethernet adapter detected; pass -cam_if <iface> to clean it up)"
 else
-  log "[8/8] Uninstalling camera interface config for $CAMERA_INTERFACE..."
+  log "[8/9] Uninstalling camera interface config for $CAMERA_INTERFACE..."
   if [ "$DEVICE_TYPE" == "jetson" ]; then
     "$SCRIPT_DIR/mtu/uninstall.sh" "$CAMERA_INTERFACE" || log "MTU uninstall completed with warnings"
   fi
   "$SCRIPT_DIR/link_local/uninstall.sh" "$CAMERA_INTERFACE" || log "Link-local uninstall completed with warnings"
+fi
+
+# Step 9: Receive-path tuning uninstall (Orin Nano). Restores the pre-install
+# rmem_max and RX ring from /etc/hdk/net_tune.conf; a safe no-op if never
+# installed. Runs before the /etc/hdk cleanup below, which needs the directory
+# empty to remove it.
+if [ "$DEVICE_TYPE" != "orin-nano" ]; then
+  log "[9/9] Skipping receive-path tuning uninstall (Orin Nano only)"
+elif [ -z "$CAMERA_INTERFACE" ]; then
+  log "[9/9] Skipping receive-path tuning uninstall (no camera interface resolved; pass -cam_if <iface> to clean it up)"
+else
+  log "[9/9] Uninstalling receive-path tuning for $CAMERA_INTERFACE..."
+  "$SCRIPT_DIR/net_tune/uninstall.sh" "$CAMERA_INTERFACE" || log "Receive-path tuning uninstall completed with warnings"
 fi
 
 # Drop the recorded interface roles (no-op if never written).
