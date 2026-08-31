@@ -8,7 +8,9 @@
 #   With external time sync: ./install.sh -d onlogic -cam_if1 ethLAN2 -cam_if2 ethLAN3 -external-time-sync true
 #   With custom sync IP:     ./install.sh -d onlogic -cam_if1 ethLAN2 -cam_if2 ethLAN3 -external-time-sync true -sync-ip 10.0.0.50/24
 #   Orin Nano with a data-out adapter: ./install.sh -d orin-nano -cam_if enxAAA -data_if enxBBB
-#   Without the PTP master (ptpd on Orin Nano, ptp4l elsewhere): ./install.sh -d orin-nano -ptp false
+#   PTP master (on by default on AGX Orin/OnLogic, off on Orin Nano):
+#     turn it off: ./install.sh -d jetson -ptp false
+#     turn it on:  ./install.sh -d orin-nano -ptp true
 #   With the NODAR SDK: ./install.sh -d jetson -sdk true -uuid <uuid> -activation-key ABCDE-ABCDE-ABCDE-ABCDE
 
 set -e
@@ -26,10 +28,11 @@ DEVICE_TYPE=""
 CAMERA_INTERFACE_1="ethLAN2"
 CAMERA_INTERFACE_2="ethLAN3"
 INSTALL_AUTOSTART=false
-# PTP master (ptp4l on AGX Orin/OnLogic, ptpd on Orin Nano). On by default;
-# -ptp false leaves the cameras unsynchronized, for boxes that get their
-# camera time from somewhere else.
-INSTALL_PTP=true
+# PTP master (ptp4l on AGX Orin/OnLogic, ptpd on Orin Nano). Resolved per board
+# after flag parsing: on by default everywhere except the Orin Nano, whose USB
+# adapter has no PTP hardware clock. Without a PTP master the cameras are left
+# unsynchronized, for boxes that get their camera time from somewhere else.
+INSTALL_PTP=""
 EXTERNAL_TIME_SYNC=false
 SYNC_IP="192.168.30.25/24"
 # Jetson-only settings, resolved per board after flag parsing.
@@ -297,6 +300,7 @@ write_interface_state() {
 if [[ "$DEVICE_TYPE" == "jetson" ]]; then
   CAMERA_INTERFACE="${CAMERA_INTERFACE:-eth0}"
   POWER_MODE="${POWER_MODE:-0}"
+  INSTALL_PTP="${INSTALL_PTP:-true}"
 elif [[ "$DEVICE_TYPE" == "orin-nano" ]]; then
   # Read before write_interface_state overwrites it.
   if [ -f "$IFACE_STATE_FILE" ]; then
@@ -304,6 +308,8 @@ elif [[ "$DEVICE_TYPE" == "orin-nano" ]]; then
   fi
   resolve_orin_nano_interfaces
   POWER_MODE="${POWER_MODE:-2}"
+  # ptpd (software timestamping) is opt-in here: -ptp true.
+  INSTALL_PTP="${INSTALL_PTP:-false}"
   log "Orin Nano camera interface: $CAMERA_INTERFACE"
   if [ -n "$DATA_OUT_INTERFACE" ]; then
     log "Orin Nano data-out interface: $DATA_OUT_INTERFACE"
@@ -311,6 +317,7 @@ elif [[ "$DEVICE_TYPE" == "orin-nano" ]]; then
   write_interface_state
 else
   POWER_MODE="${POWER_MODE:-0}"
+  INSTALL_PTP="${INSTALL_PTP:-true}"
 fi
 
 log "=========================================="
@@ -425,7 +432,7 @@ if [ "$INSTALL_PTP" == "true" ]; then
     "$SCRIPT_DIR/ptp/install.sh" -i "$CAMERA_INTERFACE"
   fi
 else
-  log "[8/10] Skipping PTP master setup (-ptp false); nothing on this box will synchronize the cameras"
+  log "[8/10] Skipping PTP master setup; nothing on this box will synchronize the cameras (pass -ptp true to install it)"
 fi
 
 # Step 9: Clock Setup. Orin Nano also pins the fan to max (it runs hotter under

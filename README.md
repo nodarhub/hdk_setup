@@ -105,7 +105,7 @@ Press Enter to accept, or type a different name. If several USB adapters are pre
 ./install.sh -d orin-nano -cam_if enx6c1ff7171c1e
 ```
 
-This uses nvpmodel mode `2` (MAXN SUPER). Because the adapter has no PTP hardware clock, PTP runs via `ptpd` (software timestamping) instead of `ptp4l`. The camera interface also gets [receive-path tuning](#receive-path-tuning-orin-nano-only): a 128 MB `net.core.rmem_max` ceiling and a 4096-descriptor RX ring.
+This uses nvpmodel mode `2` (MAXN SUPER). Because the adapter has no PTP hardware clock, the PTP master is **off by default** on the Orin Nano; pass `-ptp true` to install it, and it runs via `ptpd` (software timestamping) instead of `ptp4l`. The camera interface also gets [receive-path tuning](#receive-path-tuning-orin-nano-only): a 128 MB `net.core.rmem_max` ceiling and a 4096-descriptor RX ring.
 
 #### Optional second adapter for data-out
 
@@ -204,7 +204,7 @@ NODAR issues the two credentials separately: `-uuid` is your download entitlemen
 | `-data_if` | No | — (skipped) | Orin Nano only: second USB adapter to use as the data-out uplink (static `10.10.1.10/24`) |
 | `-power-mode` | No | `0` (jetson) / `2` (orin-nano) | nvpmodel index of the max-performance profile |
 | `-autostart` | No | `false` | Enable Hammerhead autostart service |
-| `-ptp` | No | `true` | Install the PTP master (`ptpd` on Orin Nano, `ptp4l` on AGX Orin/OnLogic). `-ptp false` skips it |
+| `-ptp` | No | `false` (orin-nano) / `true` (jetson, onlogic) | Install the PTP master (`ptpd` on Orin Nano, `ptp4l` on AGX Orin/OnLogic). The Orin Nano's adapter has no PTP hardware clock, so it is opt-in there via `-ptp true`; elsewhere `-ptp false` skips it |
 | `-external-time-sync` | No | `false` | Enable external PTP time sync (OnLogic only) |
 | `-sync-ip` | No | `192.168.30.25/24` | IP/CIDR for ethLAN4 when external time sync is enabled |
 | `-sdk` | No | `false` | Install the NODAR SDK (`hammerhead` + `nodar_viewer`) |
@@ -330,8 +330,10 @@ Also configures ISC DHCP server with subnets for camera interfaces.
 ### PTP Master
 
 The device acts as the PTP master clock for the connected cameras. Two backends
-are used depending on the board's timestamping capabilities. Pass `-ptp false`
-to skip this step, for boxes whose cameras are synchronized elsewhere.
+are used depending on the board's timestamping capabilities. It is installed by
+default on AGX Orin and OnLogic — pass `-ptp false` to skip it, for boxes whose
+cameras are synchronized elsewhere. On the Orin Nano it is **off by default**
+(no PTP hardware clock on the USB adapter); pass `-ptp true` to install `ptpd`.
 
 **ptp4l — AGX Orin & OnLogic** (`ptp/`)
 
@@ -341,6 +343,7 @@ to skip this step, for boxes whose cameras are synchronized elsewhere.
 
 **ptpd — Orin Nano** (`ptpd/`)
 
+- Opt-in: only installed with `-ptp true`
 - The Orin Nano's camera adapter has no PTP hardware clock, so `ptpd` is used
   with software timestamping (`preset=masteronly`)
 - Same E2E delay mechanism and announce/sync intervals as the ptp4l config
